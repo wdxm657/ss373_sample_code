@@ -1,0 +1,16 @@
+INC += $(BUILD_TOP)/internal/common
+INC += $(BUILD_TOP)/internal/common/platform/$(CHIP)
+INC += $(BUILD_TOP)/internal/vif
+INC += $(BUILD_TOP)/internal/isp
+INC += $(BUILD_TOP)/internal/scl
+INC += $(BUILD_TOP)/internal/venc
+INC += $(BUILD_TOP)/internal/dla
+INC += $(BUILD_TOP)/internal/rgn
+INC += $(BUILD_TOP)/internal/audio
+INC += $(BUILD_TOP)/internal/uart
+INC += $(BUILD_TOP)/internal/vdf
+INC += $(BUILD_TOP)/internal/aov
+INC += $(BUILD_TOP)/internal/rtsp_video
+INC += $(BUILD_TOP)/../common/list
+INC += $(BUILD_TOP)/../common/ss_font
+INC += $(BUILD_TOP)/../common/ss_rtsp

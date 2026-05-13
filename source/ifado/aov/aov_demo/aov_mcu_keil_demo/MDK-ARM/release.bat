@@ -1,0 +1,1 @@
+copy Objects\MCU_AOV_DEMO.hex ..\release_bin

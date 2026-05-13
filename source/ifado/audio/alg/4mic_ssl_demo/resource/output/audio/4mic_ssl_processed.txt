@@ -1,0 +1,79 @@
+time	direction	case
+0.256000	-10000	current time is not reliable!
+0.512000	-10000	current time volume is too small!
+0.768000	-10000	current time volume is too small!
+1.024000	-10000	current time volume is too small!
+1.280000	-10000	current time volume is too small!
+1.536000	-10000	current time volume is too small!
+1.792000	-10000	current time volume is too small!
+2.048000	-10000	current time volume is too small!
+2.304000	-10000	current time is not reliable!
+2.560000	-10000	current time volume is too small!
+2.816000	-10000	current time is not reliable!
+3.072000	-43	current time is reliable!
+3.328000	-43	current time is reliable!
+3.584000	-10000	current time is not reliable!
+3.840000	-43	current time is reliable!
+4.096000	-43	current time is reliable!
+4.352000	-43	current time is reliable!
+4.608000	-43	current time is reliable!
+4.864000	-43	current time is reliable!
+5.120000	-43	current time is reliable!
+5.376000	-43	current time is reliable!
+5.632000	-43	current time is reliable!
+5.888000	-43	current time is reliable!
+6.144000	-42	current time is reliable!
+6.400000	-43	current time is reliable!
+6.656000	-43	current time is reliable!
+6.912000	-43	current time is reliable!
+7.168000	-43	current time is reliable!
+7.424000	-42	current time is reliable!
+7.680000	-43	current time is reliable!
+7.936000	-43	current time is reliable!
+8.192000	-43	current time is reliable!
+8.448000	-43	current time is reliable!
+8.704000	-43	current time is reliable!
+8.960000	-43	current time is reliable!
+9.216000	-43	current time is reliable!
+9.472000	-42	current time is reliable!
+9.728000	-10000	current time is not reliable!
+9.984000	-42	current time is reliable!
+10.240000	-43	current time is reliable!
+10.496000	-43	current time is reliable!
+10.752000	-43	current time is reliable!
+11.008000	-43	current time is reliable!
+11.264000	-43	current time is reliable!
+11.520000	-43	current time is reliable!
+11.776000	-43	current time is reliable!
+12.032000	-43	current time is reliable!
+12.288000	-43	current time is reliable!
+12.544000	-43	current time is reliable!
+12.800000	-43	current time is reliable!
+13.056000	-43	current time is reliable!
+13.312000	-43	current time is reliable!
+13.568000	-43	current time is reliable!
+13.824000	-43	current time is reliable!
+14.080000	-43	current time is reliable!
+14.336000	-43	current time is reliable!
+14.592000	-43	current time is reliable!
+14.848000	-42	current time is reliable!
+15.104000	-43	current time is reliable!
+15.360000	-43	current time is reliable!
+15.616000	-43	current time is reliable!
+15.872000	-43	current time is reliable!
+16.128000	-43	current time is reliable!
+16.384001	-43	current time is reliable!
+16.639999	-43	current time is reliable!
+16.896000	-43	current time is reliable!
+17.152000	-43	current time is reliable!
+17.408001	-43	current time is reliable!
+17.664000	-43	current time is reliable!
+17.920000	-43	current time is reliable!
+18.176001	-43	current time is reliable!
+18.431999	-43	current time is reliable!
+18.688000	-43	current time is reliable!
+18.944000	-43	current time is reliable!
+19.200001	-43	current time is reliable!
+19.455999	-43	current time is reliable!
+19.712000	-43	current time is reliable!
+

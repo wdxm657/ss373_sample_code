@@ -1,0 +1,61 @@
+time	direction	case
+0.256000	10	current time is reliable!
+0.512000	18	current time is reliable!
+0.768000	11	current time is reliable!
+1.024000	19	current time is reliable!
+1.280000	18	current time is reliable!
+1.536000	2	current time is reliable!
+1.792000	1	current time is reliable!
+2.048000	1	current time is reliable!
+2.304000	1	current time is reliable!
+2.560000	1	current time is reliable!
+2.816000	1	current time is reliable!
+3.072000	0	current time is reliable!
+3.328000	-41	current time is reliable!
+3.584000	-41	current time is reliable!
+3.840000	-40	current time is reliable!
+4.096000	0	current time is reliable!
+4.352000	1	current time is reliable!
+4.608000	-40	current time is reliable!
+4.864000	-41	current time is reliable!
+5.120000	-40	current time is reliable!
+5.376000	1	current time is reliable!
+5.632000	2	current time is reliable!
+5.888000	1	current time is reliable!
+6.144000	1	current time is reliable!
+6.400000	-40	current time is reliable!
+6.656000	-41	current time is reliable!
+6.912000	-41	current time is reliable!
+7.168000	1	current time is reliable!
+7.424000	-41	current time is reliable!
+7.680000	2	current time is reliable!
+7.936000	1	current time is reliable!
+8.192000	-41	current time is reliable!
+8.448000	-40	current time is reliable!
+8.704000	-40	current time is reliable!
+8.960000	-40	current time is reliable!
+9.216000	1	current time is reliable!
+9.472000	1	current time is reliable!
+9.728000	1	current time is reliable!
+9.984000	-40	current time is reliable!
+10.240000	-40	current time is reliable!
+10.496000	0	current time is reliable!
+10.752000	1	current time is reliable!
+11.008000	3	current time is reliable!
+11.264000	4	current time is reliable!
+11.520000	1	current time is reliable!
+11.776000	-41	current time is reliable!
+12.032000	-40	current time is reliable!
+12.288000	-40	current time is reliable!
+12.544000	0	current time is reliable!
+12.800000	0	current time is reliable!
+13.056000	2	current time is reliable!
+13.312000	0	current time is reliable!
+13.568000	-40	current time is reliable!
+13.824000	-40	current time is reliable!
+14.080000	0	current time is reliable!
+14.336000	0	current time is reliable!
+14.592000	1	current time is reliable!
+14.848000	2	current time is reliable!
+15.104000	-40	current time is reliable!
+
