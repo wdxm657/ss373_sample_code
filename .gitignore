@@ -1,0 +1,22 @@
+# Build output directories
+/out/
+/release/
+
+# ARM user build intermediates
+*.user.arm.d
+*.user.arm.o
+
+# Generic object/dependency artifacts
+*.o
+*.d
+*.a
+*.so
+
+# Kernel module build artifacts
+*.cmd
+*.ko
+*.mod
+*.mod.c
+*.mod.o
+Module.symvers
+modules.order
