@@ -34,7 +34,7 @@ MI_S16 g_s16Gains = 0;
 
 void ST_AO_Usage(char **argv)
 {
-    printf("Usage:%s gian x,x from -63.5 to 64", argv[0]);
+    printf("Usage:%s gian x,x from -60 to 30", argv[0]);
 }
 
 MI_S32 ST_AO_GainControl(int argc, char **argv)
@@ -43,7 +43,7 @@ MI_S32 ST_AO_GainControl(int argc, char **argv)
     {
         if (0 == strcmp(argv[i], "gain"))
         {
-            g_s16Gains = atoi(argv[i + 1]) * 8;
+            g_s16Gains = atoi(argv[i + 1]);
         }
     }
     return MI_SUCCESS;
@@ -52,12 +52,12 @@ MI_S32 ST_AO_GainControl(int argc, char **argv)
 MI_U32 ST_PlayAoData(char *pPlayFileName, MI_AUDIO_DEV AoDevId)
 {
     WaveFileHeader_t stWavHeader;
-    MI_U32           playfd;
-    MI_S32           s32ReadSize     = 0;
-    char *           pTmpBuf         = NULL;
-    MI_U32           writeBufferSize = 4096;
-    MI_U32           s32Ret;
-    MI_BOOL          bAoExit = FALSE;
+    MI_U32 playfd;
+    MI_S32 s32ReadSize = 0;
+    char *pTmpBuf = NULL;
+    MI_U32 writeBufferSize = 4096;
+    MI_U32 s32Ret;
+    MI_BOOL bAoExit = FALSE;
 
     // open play file
     playfd = open((char *)pPlayFileName, O_RDONLY, 0666);
@@ -94,7 +94,7 @@ MI_U32 ST_PlayAoData(char *pPlayFileName, MI_AUDIO_DEV AoDevId)
         {
             lseek(playfd, sizeof(WaveFileHeader_t), SEEK_SET);
             s32ReadSize = read(playfd, pTmpBuf, writeBufferSize);
-            bAoExit     = TRUE;
+            bAoExit = TRUE;
         }
 
         s32Ret = MI_AO_Write(AoDevId, pTmpBuf, s32ReadSize, 0, -1);
@@ -119,15 +119,21 @@ int main(int argc, char **argv)
 
     // init ao
     MI_AO_Attr_t stAoSetAttr;
-    MI_AUDIO_DEV stAoDevId  = 0;
-    MI_AO_If_e   aenAoIfs[] = {E_MI_AO_IF_DAC_AB};
+    MI_AUDIO_DEV stAoDevId = 0;
+    MI_AO_If_e aenAoIfs[] = {E_MI_AO_IF_DAC_AB};
     memset(&stAoSetAttr, 0x0, sizeof(MI_AO_Attr_t));
 
     STCHECKRESULT(ST_Common_GetAoDefaultDevAttr(&stAoSetAttr));
     STCHECKRESULT(ST_Common_AoOpenDev(stAoDevId, &stAoSetAttr));
     STCHECKRESULT(ST_Common_AoAttachIf(stAoDevId, aenAoIfs));
 
-    MI_AO_SetVolume(stAoDevId, g_s16Gains, g_s16Gains, 0);
+    int ret = MI_AO_SetVolume(stAoDevId, g_s16Gains, g_s16Gains, 0);
+    printf("ret = 0x%x g_s16Gains = %d\n", ret, g_s16Gains);
+    if (ret != MI_SUCCESS)
+    {
+        printf("Failed to set volume\n");
+        return -1;
+    }
 
     char *input_file = "resource/input/audio/ao_8K_16bit_MONO_30s.wav";
     printf("input_file = %s\n", input_file);

@@ -31,7 +31,7 @@ MI_S16 g_s16Gains[] = {-10};
 
 void ST_AI_Usage(char **argv)
 {
-    printf("Usage:%s gian x,x from -63.5 to 64", argv[0]);
+    printf("Usage:%s gian x,x from -60 to 30", argv[0]);
 }
 
 MI_S32 ST_AI_GainControl(int argc, char **argv)
@@ -40,7 +40,7 @@ MI_S32 ST_AI_GainControl(int argc, char **argv)
     {
         if (0 == strcmp(argv[i], "gain"))
         {
-            g_s16Gains[0] = atoi(argv[i + 1]) * 8;
+            g_s16Gains[0] = atoi(argv[i + 1]);
         }
     }
     return MI_SUCCESS;
