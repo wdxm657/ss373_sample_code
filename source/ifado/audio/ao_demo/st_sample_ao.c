@@ -136,6 +136,7 @@ int main(int argc, char **argv)
     }
 
     char *input_file = "resource/input/audio/ao_8K_16bit_MONO_30s.wav";
+    // char *input_file = "dukou.pcm";
     printf("input_file = %s\n", input_file);
 
     // play audio form input file

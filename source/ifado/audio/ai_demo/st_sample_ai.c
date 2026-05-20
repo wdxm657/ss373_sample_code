@@ -73,33 +73,33 @@ MI_S32 ST_AddWaveHeader(WaveFileHeader_t *tWavHead, SoundMode_e enSoundMode, Sam
         tWavHead->wave.wChannels = 0x02;
     }
 
-    tWavHead->wave.wFormatTag      = 0x1;
-    tWavHead->wave.wBitsPerSample  = 16; // 16bit
+    tWavHead->wave.wFormatTag = 0x1;
+    tWavHead->wave.wBitsPerSample = 16; // 16bit
     tWavHead->wave.dwSamplesPerSec = enSampleRate;
     tWavHead->wave.dwAvgBytesPerSec =
         (tWavHead->wave.wBitsPerSample * tWavHead->wave.dwSamplesPerSec * tWavHead->wave.wChannels) / 8;
     tWavHead->wave.wBlockAlign = 1024;
-    tWavHead->chDATA[0]        = 'd';
-    tWavHead->chDATA[1]        = 'a';
-    tWavHead->chDATA[2]        = 't';
-    tWavHead->chDATA[3]        = 'a';
-    tWavHead->dwDATALen        = u32Len;
-    tWavHead->dwRIFFLen        = u32Len + sizeof(WaveFileHeader_t) - 8;
+    tWavHead->chDATA[0] = 'd';
+    tWavHead->chDATA[1] = 'a';
+    tWavHead->chDATA[2] = 't';
+    tWavHead->chDATA[3] = 'a';
+    tWavHead->dwDATALen = u32Len;
+    tWavHead->dwRIFFLen = u32Len + sizeof(WaveFileHeader_t) - 8;
 
     return MI_SUCCESS;
 }
 
 MI_U32 ST_DumpAIData(char *pDumpFileName, MI_AUDIO_DEV AiDevId, MI_U8 u8ChnGrpId)
 {
-    MI_AI_Data_t     stMicFrame;
-    MI_AI_Data_t     stEchoFrame;
-    MI_S32           s32Ret;
-    struct timeval   beforeWriteFile, afterWriteFile, lastRead, nowRead, baseRead;
-    MI_S64           beforeWriteFileUs = 0, afterWriteFileUs = 0, lastReadUs = 0, nowReadUs = 0;
-    MI_U8            u8DumpFileIdx  = 0;
-    FILE *           AiChnFd        = NULL;
-    MI_U32           u32MicDumpSize = 0;
-    WaveFileHeader_t stWavHead      = {0};
+    MI_AI_Data_t stMicFrame;
+    MI_AI_Data_t stEchoFrame;
+    MI_S32 s32Ret;
+    struct timeval beforeWriteFile, afterWriteFile, lastRead, nowRead, baseRead;
+    MI_S64 beforeWriteFileUs = 0, afterWriteFileUs = 0, lastReadUs = 0, nowReadUs = 0;
+    MI_U8 u8DumpFileIdx = 0;
+    FILE *AiChnFd = NULL;
+    MI_U32 u32MicDumpSize = 0;
+    WaveFileHeader_t stWavHead = {0};
 
     // write header format
     AiChnFd = fopen((char *)pDumpFileName, "w+");
@@ -108,7 +108,7 @@ MI_U32 ST_DumpAIData(char *pDumpFileName, MI_AUDIO_DEV AiDevId, MI_U8 u8ChnGrpId
         printf("Failed to open output file [%s].\n", pDumpFileName);
         return -1;
     }
-    STCHECKRESULT(ST_AddWaveHeader(&stWavHead, E_SOUND_MODE_MONO, E_MI_AUDIO_SAMPLE_RATE_8000, u32MicDumpSize));
+    STCHECKRESULT(ST_AddWaveHeader(&stWavHead, E_SOUND_MODE_MONO, E_MI_AUDIO_SAMPLE_RATE_16000, u32MicDumpSize));
     s32Ret = fwrite(&stWavHead, sizeof(WaveFileHeader_t), 1, AiChnFd);
     if (s32Ret != 1)
     {
@@ -131,7 +131,7 @@ MI_U32 ST_DumpAIData(char *pDumpFileName, MI_AUDIO_DEV AiDevId, MI_U8 u8ChnGrpId
         if (MI_SUCCESS == s32Ret)
         {
             gettimeofday(&nowRead, NULL);
-            nowReadUs  = nowRead.tv_sec * 1000000 + nowRead.tv_usec;
+            nowReadUs = nowRead.tv_sec * 1000000 + nowRead.tv_usec;
             lastReadUs = lastRead.tv_sec * 1000000 + lastRead.tv_usec;
             printf("######## Ai Device %d ChnGrp %d cost time of getting one frame:%lldms ########\n", AiDevId,
                    u8ChnGrpId, (nowReadUs - lastReadUs) / 1000);
@@ -142,7 +142,7 @@ MI_U32 ST_DumpAIData(char *pDumpFileName, MI_AUDIO_DEV AiDevId, MI_U8 u8ChnGrpId
             gettimeofday(&afterWriteFile, NULL);
 
             beforeWriteFileUs = beforeWriteFile.tv_sec * 1000000 + beforeWriteFile.tv_usec;
-            afterWriteFileUs  = afterWriteFile.tv_sec * 1000000 + afterWriteFile.tv_usec;
+            afterWriteFileUs = afterWriteFile.tv_sec * 1000000 + afterWriteFile.tv_usec;
             if (afterWriteFileUs - beforeWriteFileUs > 10 * 1000)
             {
                 printf("Ai Device %d ChnGrp %d Chn %d cost time of writing one frame:%lldms.\n", AiDevId, u8ChnGrpId,
@@ -163,7 +163,7 @@ MI_U32 ST_DumpAIData(char *pDumpFileName, MI_AUDIO_DEV AiDevId, MI_U8 u8ChnGrpId
     }
 
     // write data size in header
-    STCHECKRESULT(ST_AddWaveHeader(&stWavHead, E_SOUND_MODE_MONO, E_MI_AUDIO_SAMPLE_RATE_8000, u32MicDumpSize));
+    STCHECKRESULT(ST_AddWaveHeader(&stWavHead, E_SOUND_MODE_MONO, E_MI_AUDIO_SAMPLE_RATE_16000, u32MicDumpSize));
     fseek(AiChnFd, 0, SEEK_SET);
     s32Ret = fwrite(&stWavHead, sizeof(WaveFileHeader_t), 1, AiChnFd);
     if (s32Ret != 1)
@@ -185,17 +185,18 @@ MI_S32 main(int argc, char **argv)
 
     // init ai
     MI_AI_Attr_t stAiDevAttr;
-    MI_AUDIO_DEV stAiDevId  = 0;
-    MI_U8        stChnGrpId = 0;
-    MI_AI_If_e   enAiIf[]   = {E_MI_AI_IF_ADC_AB, E_MI_AI_IF_ECHO_A};
+    MI_AUDIO_DEV stAiDevId = 0;
+    MI_U8 stChnGrpId = 0;
+    MI_AI_If_e enAiIf[] = {E_MI_AI_IF_ADC_AB, E_MI_AI_IF_ECHO_A};
 
     memset(&stAiDevAttr, 0x0, sizeof(MI_AI_Attr_t));
 
     ST_Common_GetAiDefaultDevAttr(&stAiDevAttr);
+    stAiDevAttr.enSampleRate = E_MI_AUDIO_SAMPLE_RATE_16000;
     ST_Common_AiOpenDev(stAiDevId, &stAiDevAttr);
     ST_Common_AiAttachIf(stAiDevId, stChnGrpId, enAiIf, 2);
 
-    MI_AI_SetGain(stAiDevId, stChnGrpId, g_s16Gains, sizeof(g_s16Gains)/sizeof(g_s16Gains[0]));
+    MI_AI_SetGain(stAiDevId, stChnGrpId, g_s16Gains, sizeof(g_s16Gains) / sizeof(g_s16Gains[0]));
 
     // enable ai chngroup
     ST_Common_AiEnableChnGroup(stAiDevId, stChnGrpId);
@@ -203,9 +204,9 @@ MI_S32 main(int argc, char **argv)
     // dump ai data
     MI_SYS_ChnPort_t stChnOutputPort;
     memset(&stChnOutputPort, 0x0, sizeof(stChnOutputPort));
-    stChnOutputPort.eModId    = E_MI_MODULE_ID_AI;
-    stChnOutputPort.u32DevId  = stAiDevId;
-    stChnOutputPort.u32ChnId  = stChnGrpId;
+    stChnOutputPort.eModId = E_MI_MODULE_ID_AI;
+    stChnOutputPort.u32DevId = stAiDevId;
+    stChnOutputPort.u32ChnId = stChnGrpId;
     stChnOutputPort.u32PortId = 0;
     STCHECKRESULT(MI_SYS_SetChnOutputPortDepth(0, &stChnOutputPort, 3, 5));
 

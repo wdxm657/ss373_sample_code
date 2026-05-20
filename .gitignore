@@ -20,3 +20,5 @@
 *.mod.o
 Module.symvers
 modules.order
+
+third_part
