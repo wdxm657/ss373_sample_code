@@ -130,6 +130,11 @@ install:
 	@rm -rvf $(PROJ_ROOT)/release/chip/$(CHIP)/$(PRODUCT)/common/$(TOOLCHAIN)/$(TOOLCHAIN_VERSION)/release/bin/sample_code
 	@mkdir -p $(PROJ_ROOT)/release/chip/$(CHIP)/$(PRODUCT)/common/$(TOOLCHAIN)/$(TOOLCHAIN_VERSION)/release/bin/sample_code/
 	@$(MAKE) $(MODULES_APP_INSTALL)
+	@if [ -d $(BUILD_TOP)/for_board ]; then \
+		mkdir -p $(IMAGE_PATH)/bin; \
+		cp -rvf $(BUILD_TOP)/for_board/* $(IMAGE_PATH)/bin/; \
+		find $(IMAGE_PATH)/bin -name '*.sh' -exec chmod 755 {} +; \
+	fi;
 	@if [ -d $(IMAGE_PATH) ]; then  \
 		cp -rvf $(IMAGE_PATH)/* $(PROJ_ROOT)/release/chip/$(CHIP)/$(PRODUCT)/common/$(TOOLCHAIN)/$(TOOLCHAIN_VERSION)/release/bin/sample_code/;  \
 	fi;
