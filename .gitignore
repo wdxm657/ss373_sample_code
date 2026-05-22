@@ -22,3 +22,5 @@ Module.symvers
 modules.order
 
 third_part
+
+build/

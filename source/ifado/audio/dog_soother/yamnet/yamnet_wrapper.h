@@ -32,6 +32,9 @@ extern "C"
 	int yamnet_init_model(yamnet_context_t *ctx, const char *model_path);
 	int yamnet_inference(yamnet_context_t *ctx, const float *audio_data, int audio_length,
 						 yamnet_detect_result_list_t *results);
+	/* 返回 Top-K 全类别结果（不过滤猫狗），用于 WAV 离线测试 */
+	int yamnet_inference_topk(yamnet_context_t *ctx, const float *audio_data, int audio_length,
+							  yamnet_detect_result_list_t *results);
 	void yamnet_destroy_context(yamnet_context_t *ctx);
 
 	// 获取类别名称

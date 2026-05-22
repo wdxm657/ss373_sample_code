@@ -1,4 +1,5 @@
 #include "yamnet_wrapper.h"
+#undef LOG_TAG
 #include "log.h"
 #include <algorithm>
 #include <cmath>
@@ -1003,16 +1004,16 @@ static int print_topk_audio(const std::vector<float> &logits, int topk)
     return 0;
 }
 
-// 进行YAMNet推理
-int yamnet_inference(yamnet_context_t *ctx, const float *audio_data, int audio_length,
-                     yamnet_detect_result_list_t *results)
+// 进行YAMNet推理（Top-K 全类别）
+int yamnet_inference_topk(yamnet_context_t *ctx, const float *audio_data, int audio_length,
+                          yamnet_detect_result_list_t *results)
 {
     if (!ctx || !ctx->initialized || !audio_data || !results)
     {
         return -1;
     }
-    // LOG_DEBUG("YAMNet: ctxt=%f, audio_data=%p, audio_length=%d, results=%p\n", ctx->threshold,
-    //           audio_data, audio_length, results);
+
+    memset(results, 0, sizeof(*results));
 
     yamnet_detect_result_list_t tmp_results;
     memset(&tmp_results, 0, sizeof(tmp_results));
@@ -1029,7 +1030,8 @@ int yamnet_inference(yamnet_context_t *ctx, const float *audio_data, int audio_l
 
     // 分割成patches (50%重叠)
     std::vector<std::vector<std::vector<float>>> patches;
-    int num_frames = mel_spectrogram.size();
+    int num_frames = mel_spectrogram.size() - 1;
+    LOG_DEBUG("num_frames: %d\n", num_frames);
     std::vector<std::vector<std::pair<int, float>>> all_topk;
 
     int patch_hop = yamnet_params::PATCH_FRAMES / 2; // 50%重叠
@@ -1051,6 +1053,7 @@ int yamnet_inference(yamnet_context_t *ctx, const float *audio_data, int audio_l
         patches.push_back(patch);
     }
 
+    LOG_DEBUG("patches.size(): %d\n", patches.size());
     if (patches.empty())
     {
         return -1;
@@ -1185,14 +1188,48 @@ int yamnet_inference(yamnet_context_t *ctx, const float *audio_data, int audio_l
     {
         int cls_id = tmp_results.results[i].cls_id;
         float confidence = tmp_results.results[i].confidence;
+
+        results->results[results->count].cls_id = cls_id;
+        results->results[results->count].confidence = confidence;
+        results->count++;
+    }
+#ifdef DEBUG
+    LOG_DEBUG("=======================================================\n");
+    for (size_t i = 0; i < results->count; i++)
+    {
+        LOG_INFO("YAMNet results detected %d sounds %s %f\n", results->results[i].cls_id,
+                 yamnet_get_class_name(results->results[i].cls_id), results->results[i].confidence);
+    }
+    LOG_DEBUG("=======================================================\n");
+#endif
+
+    return 0;
+}
+
+int yamnet_inference(yamnet_context_t *ctx, const float *audio_data, int audio_length,
+                     yamnet_detect_result_list_t *results)
+{
+    yamnet_detect_result_list_t all_results;
+    memset(&all_results, 0, sizeof(all_results));
+
+    int ret = yamnet_inference_topk(ctx, audio_data, audio_length, &all_results);
+    if (ret != 0 || !results)
+    {
+        return ret;
+    }
+
+    memset(results, 0, sizeof(*results));
+    for (int i = 0; i < all_results.count; i++)
+    {
+        int cls_id = all_results.results[i].cls_id;
+        float confidence = all_results.results[i].confidence;
         bool cat_dog = false;
 
-        // 只处理猫狗相关类ID
         if (cls_id == dog_idx || cls_id == bark_idx || cls_id == yip_idx || cls_id == howl_idx ||
             cls_id == bow_wow_idx || cls_id == growl_idx || cls_id == whimper_idx ||
             cls_id == cat_idx || cls_id == purr_idx || cls_id == meow_idx || cls_id == hiss_idx ||
             cls_id == caterwaul_idx || cls_id == canidae_idx)
-        { // cat or dog
+        {
             cat_dog = true;
         }
 
