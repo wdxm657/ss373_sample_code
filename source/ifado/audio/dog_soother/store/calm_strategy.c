@@ -156,6 +156,8 @@ int calm_strategy_load(void)
     g_st.us_cnt = f.us_cnt;
     memcpy(g_st.us_order, f.us_order, sizeof(g_st.us_order));
     LOG_INFO("strategy loaded from %s\n", DS_STRATEGY_PATH);
+    LOG_INFO("measure_order: %d, %d, %d\n", g_st.measure_order[0], g_st.measure_order[1], g_st.measure_order[2]);
+    LOG_INFO("us_order: %d, %d, %d\n", g_st.us_order[0], g_st.us_order[1], g_st.us_order[2]);
     return 0;
 }
 

@@ -15,16 +15,17 @@
 /* 内存态，对应 STATUS_GET payload[1..8] */
 typedef struct
 {
-    uint8_t power_on;              /* out[1] */
-    ds_work_state_t work_state;    /* out[2] */
-    uint8_t bt_linked;             /* out[3] */
-    uint8_t owner_voice_exist;     /* out[4] */
-    uint8_t owner_duration_sec;    /* 缓存时长，文件存在时刷新 */
-    uint8_t volume;                /* out[5]，与 audio 模块同步待完善 */
-    ds_calm_mode_t calm_mode;      /* out[6] */
-    uint8_t enabled_mask;          /* out[7] DS_ENABLED_* */
-    uint8_t us_mask;               /* out[8] */
+    uint8_t power_on;           /* out[1] */
+    ds_work_state_t work_state; /* out[2] */
+    uint8_t bt_linked;          /* out[3] */
+    uint8_t owner_voice_exist;  /* out[4] */
+    uint8_t owner_duration_sec; /* 缓存时长，文件存在时刷新 */
+    uint8_t volume;             /* out[5]，与 audio 模块同步待完善 */
+    ds_calm_mode_t calm_mode;   /* out[6] */
+    uint8_t enabled_mask;       /* out[7] DS_ENABLED_* */
+    uint8_t us_mask;            /* out[8] */
 } ds_runtime_t;
+ds_work_state_t last_work_state;
 
 void comfort_store_apply_strategy(void)
 {
@@ -49,7 +50,7 @@ void comfort_store_apply_strategy(void)
 
 static ds_runtime_t g_rt = {
     .power_on = 1,
-    .work_state = DS_WORK_MONITORING,
+    .work_state = DS_WORK_OFF,
     .bt_linked = 0,
     .owner_voice_exist = 0,
     .owner_duration_sec = 0,
@@ -113,6 +114,12 @@ void comfort_store_set_bt_linked(uint8_t linked) /* BT_LINK_NOTIFY */
 
 ds_work_state_t comfort_store_get_work_state(void)
 {
+    if (g_rt.work_state != last_work_state)
+    {
+        LOG_DEBUG("work_state changed from %d to %d\n", last_work_state, g_rt.work_state);
+        last_work_state = g_rt.work_state;
+    }
+
     return g_rt.work_state;
 }
 
@@ -128,11 +135,11 @@ void comfort_store_set_calm_runtime(ds_calm_mode_t mode, uint8_t enabled_mask, u
     g_rt.us_mask = us_mask;
 }
 
-uint16_t comfort_store_pull_records( /* 0x41 占位：rsp 固定 OK+空记录 */
-    const uint8_t *req,
-    uint16_t req_len,
-    uint8_t *rsp,
-    uint16_t rsp_cap)
+uint16_t comfort_store_pull_records(/* 0x41 占位：rsp 固定 OK+空记录 */
+                                    const uint8_t *req,
+                                    uint16_t req_len,
+                                    uint8_t *rsp,
+                                    uint16_t rsp_cap)
 {
     (void)req;
     (void)req_len;
@@ -147,11 +154,11 @@ uint16_t comfort_store_pull_records( /* 0x41 占位：rsp 固定 OK+空记录 */
     return 4;
 }
 
-uint16_t comfort_store_factory_reset( /* 删主人录音并恢复默认策略字段 */
-    const uint8_t *req,
-    uint16_t req_len,
-    uint8_t *rsp,
-    uint16_t rsp_cap)
+uint16_t comfort_store_factory_reset(/* 删主人录音并恢复默认策略字段 */
+                                     const uint8_t *req,
+                                     uint16_t req_len,
+                                     uint8_t *rsp,
+                                     uint16_t rsp_cap)
 {
     (void)req;
     (void)req_len;

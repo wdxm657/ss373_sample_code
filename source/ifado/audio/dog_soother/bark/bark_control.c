@@ -1,6 +1,6 @@
 /**
  * @file bark_control.c
- * @brief 监听(10s/3次) → 单步安抚 → 复听 → 休息；策略见 calm_strategy
+ * @brief 监听 → 识别(10s/3次) → 执行 → 复听 → 休息；策略见 calm_strategy
  */
 #define LOG_TAG "bark_control"
 #include "log.h"
@@ -31,7 +31,7 @@
 typedef enum
 {
     BARK_LISTEN_IDLE = 0,
-    BARK_LISTEN_WINDOW,
+    BARK_LISTEN_IDENTIFY,
     BARK_LISTEN_POST_MEASURE,
 } bark_listen_phase_t;
 
@@ -67,6 +67,9 @@ static uint8_t g_power_on = 1;
 static bark_fsm_t g_fsm;
 static pthread_mutex_t g_fsm_mu = PTHREAD_MUTEX_INITIALIZER;
 static uint32_t g_next_session_id = 1;
+
+static void bark_start_session_locked(uint32_t bark_ts);
+static void bark_begin_action_locked(void);
 
 static int bark_measure_enabled(uint8_t measure, uint8_t enabled_mask)
 {
@@ -115,6 +118,22 @@ static void bark_set_work_state(ds_work_state_t st, uint8_t reason)
     }
     comfort_store_set_work_state(st);
     bark_control_post_work_state(reason);
+}
+
+static void bark_enter_identifying_locked(time_t now)
+{
+    bark_set_work_state(DS_WORK_IDENTIFYING, 1);
+    g_fsm.listen_phase = BARK_LISTEN_IDENTIFY;
+    g_fsm.win_count = 1;
+    g_fsm.win_deadline = now + DS_MONITOR_WINDOW_SEC;
+    LOG_INFO("identifying start deadline=%ld\n", (long)g_fsm.win_deadline);
+}
+
+static void bark_identifying_back_to_monitor_locked(void)
+{
+    bark_set_work_state(DS_WORK_MONITORING, 7);
+    bark_listen_reset_locked();
+    LOG_INFO("identifying end, back to monitoring\n");
 }
 
 static void bark_post_session_start_evt(uint32_t session_id, uint32_t bark_ts)
@@ -328,6 +347,13 @@ static void bark_begin_action_locked(void)
     }
 }
 
+static void bark_identifying_start_session_locked(uint32_t bark_ts)
+{
+    bark_start_session_locked(bark_ts);
+    bark_begin_action_locked();
+    bark_listen_reset_locked();
+}
+
 static void bark_after_measure_done_locked(void)
 {
     time_t now = time(NULL);
@@ -379,68 +405,79 @@ static void bark_measure_poll_locked(void)
 static void bark_on_window_hit_locked(uint32_t epoch_sec)
 {
     time_t now = (time_t)epoch_sec;
+    ds_work_state_t st = comfort_store_get_work_state();
 
-    if (comfort_store_get_work_state() == DS_WORK_RESTING)
-    {
-        return;
-    }
-    if (comfort_store_get_work_state() == DS_WORK_ACTING)
+    if (st == DS_WORK_RESTING || st == DS_WORK_ACTING)
     {
         return;
     }
 
-    if (g_fsm.listen_phase == BARK_LISTEN_IDLE)
+    /* 监听：第一次狗叫 → 进入识别 */
+    if (st == DS_WORK_MONITORING && g_fsm.listen_phase == BARK_LISTEN_IDLE)
     {
-        g_fsm.listen_phase = BARK_LISTEN_WINDOW;
+        bark_enter_identifying_locked(now);
+        return;
+    }
+
+    /* 识别：继续累计，满 3 次进入安抚执行 */
+    if (st == DS_WORK_IDENTIFYING)
+    {
+        if (g_fsm.listen_phase != BARK_LISTEN_IDENTIFY)
+        {
+            return;
+        }
+        if (now > g_fsm.win_deadline)
+        {
+            bark_enter_identifying_locked(now);
+            return;
+        }
+        g_fsm.win_count++;
+        LOG_INFO("identifying count=%d\n", g_fsm.win_count);
+        if (g_fsm.win_count >= DS_MONITOR_BARK_TRIGGER)
+        {
+            bark_identifying_start_session_locked(epoch_sec);
+        }
+        return;
+    }
+
+    /* 措施后复听（仍在 MONITORING，不经过识别态） */
+    if (st != DS_WORK_MONITORING || g_fsm.listen_phase != BARK_LISTEN_POST_MEASURE || !g_fsm.in_session)
+    {
+        return;
+    }
+
+    if (g_fsm.win_count == 0)
+    {
         g_fsm.win_count = 1;
         g_fsm.win_deadline = now + DS_MONITOR_WINDOW_SEC;
-        LOG_INFO("bark window start deadline=%ld\n", (long)g_fsm.win_deadline);
-        return;
-    }
-
-    if (g_fsm.listen_phase != BARK_LISTEN_WINDOW &&
-        g_fsm.listen_phase != BARK_LISTEN_POST_MEASURE)
-    {
+        LOG_INFO("post-measure window start deadline=%ld\n", (long)g_fsm.win_deadline);
         return;
     }
 
     if (now > g_fsm.win_deadline)
     {
-        g_fsm.listen_phase = BARK_LISTEN_WINDOW;
         g_fsm.win_count = 1;
         g_fsm.win_deadline = now + DS_MONITOR_WINDOW_SEC;
-        LOG_INFO("bark window restarted\n");
+        LOG_INFO("post-measure window restarted\n");
         return;
     }
 
     g_fsm.win_count++;
-    LOG_INFO("bark window count=%d\n", g_fsm.win_count);
-
+    LOG_INFO("post-measure count=%d\n", g_fsm.win_count);
     if (g_fsm.win_count < DS_MONITOR_BARK_TRIGGER)
     {
         return;
     }
 
-    if (!g_fsm.in_session)
+    if (g_fsm.action_idx < g_fsm.action_cnt)
     {
-        bark_start_session_locked(epoch_sec);
         bark_begin_action_locked();
-        bark_listen_reset_locked();
-        return;
     }
-
-    if (g_fsm.listen_phase == BARK_LISTEN_POST_MEASURE)
+    else
     {
-        if (g_fsm.action_idx < g_fsm.action_cnt)
-        {
-            bark_begin_action_locked();
-        }
-        else
-        {
-            bark_enter_rest_locked(0);
-        }
-        bark_listen_reset_locked();
+        bark_enter_rest_locked(0);
     }
+    bark_listen_reset_locked();
 }
 
 static void bark_tick_listen_locked(void)
@@ -464,15 +501,17 @@ static void bark_tick_listen_locked(void)
             return;
         }
     }
+}
 
-    if (g_fsm.listen_phase == BARK_LISTEN_WINDOW && g_fsm.win_deadline > 0 &&
-        now >= g_fsm.win_deadline)
+static void bark_tick_identifying_locked(void)
+{
+    time_t now = time(NULL);
+
+    if (g_fsm.win_deadline > 0 && now >= g_fsm.win_deadline &&
+        g_fsm.win_count < DS_MONITOR_BARK_TRIGGER)
     {
-        if (!g_fsm.in_session && g_fsm.win_count < DS_MONITOR_BARK_TRIGGER)
-        {
-            LOG_INFO("monitor window expired count=%d\n", g_fsm.win_count);
-            bark_listen_reset_locked();
-        }
+        LOG_INFO("identifying window expired count=%d\n", g_fsm.win_count);
+        bark_identifying_back_to_monitor_locked();
     }
 }
 
@@ -577,6 +616,9 @@ void bark_control_tick(void)
     {
     case DS_WORK_MONITORING:
         bark_tick_listen_locked();
+        break;
+    case DS_WORK_IDENTIFYING:
+        bark_tick_identifying_locked();
         break;
     case DS_WORK_ACTING:
         bark_tick_acting_locked();
