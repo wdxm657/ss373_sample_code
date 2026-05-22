@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 
+/* 各 .c 可在 include 前 #define LOG_TAG 覆盖模块名 */
 #ifndef LOG_TAG
 #define LOG_TAG "dog_soother"
 #endif

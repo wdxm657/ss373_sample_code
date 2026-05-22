@@ -1,3 +1,7 @@
+/**
+ * @file uart_proto.c
+ * @brief 55 AA 帧收发、CRC16-IBM、RX 解析线程
+ */
 #define LOG_TAG "uart_proto"
 #include "log.h"
 
@@ -21,15 +25,15 @@ static volatile int g_rx_started;
 static ds_uart_frame_cb_t g_rx_cb;
 static void *g_rx_user;
 static pthread_mutex_t g_tx_mutex = PTHREAD_MUTEX_INITIALIZER;
-static int g_uart_debug;
+static int g_uart_debug; /* DS_UART_DEBUG=1 时打印 TX/RX hex */
 
-static int uart_env_debug_enabled(void)
+static int uart_env_debug_enabled(void) /* DS_UART_DEBUG=1 */
 {
     const char *env = getenv("DS_UART_DEBUG");
     return (env && env[0] == '1');
 }
 
-static void uart_hex_log(const char *prefix, const uint8_t *data, uint16_t len)
+static void uart_hex_log(const char *prefix, const uint8_t *data, uint16_t len) /* 调试：单行 hex */
 {
     if (!g_uart_debug || !data || len == 0)
     {
@@ -55,7 +59,7 @@ static void uart_hex_log(const char *prefix, const uint8_t *data, uint16_t len)
     LOG_DEBUG("%s\n", line);
 }
 
-static uint16_t uart_crc16_ibm(const uint8_t *data, uint16_t len)
+static uint16_t uart_crc16_ibm(const uint8_t *data, uint16_t len) /* 从 ver 字节起算 */
 {
     uint16_t crc = 0xFFFF;
     for (uint16_t i = 0; i < len; i++)
@@ -76,7 +80,7 @@ static uint16_t uart_crc16_ibm(const uint8_t *data, uint16_t len)
     return crc;
 }
 
-static speed_t uart_baud_to_speed(unsigned int baudrate)
+static speed_t uart_baud_to_speed(unsigned int baudrate) /* termios 速率常量 */
 {
     switch (baudrate)
     {
@@ -94,7 +98,7 @@ static speed_t uart_baud_to_speed(unsigned int baudrate)
     }
 }
 
-static int uart_configure_port(int fd, unsigned int baudrate)
+static int uart_configure_port(int fd, unsigned int baudrate) /* raw 8N1、无流控 */
 {
     struct termios tio;
     if (tcgetattr(fd, &tio) != 0)
@@ -129,7 +133,7 @@ static int uart_configure_port(int fd, unsigned int baudrate)
     return 0;
 }
 
-static int uart_send_frame(uint8_t msg_type, uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uint16_t payload_len)
+static int uart_send_frame(uint8_t msg_type, uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uint16_t payload_len) /* 组帧并 write */
 {
     if (g_uart_fd < 0)
     {
@@ -140,6 +144,7 @@ static int uart_send_frame(uint8_t msg_type, uint8_t cmd_id, uint8_t seq, const 
         return -2;
     }
 
+    /* 帧：55 AA | ver | type | cmd | seq | len_le | payload | crc_le */
     uint8_t frame[8 + DS_UART_MAX_PAYLOAD + 2];
     uint16_t idx = 0;
     frame[idx++] = 0x55;
@@ -173,7 +178,7 @@ static int uart_send_frame(uint8_t msg_type, uint8_t cmd_id, uint8_t seq, const 
     return 0;
 }
 
-static void uart_try_parse(uint8_t *buf, uint16_t *len)
+static void uart_try_parse(uint8_t *buf, uint16_t *len) /* 粘包缓冲：找 55 AA、校验 CRC、回调 */
 {
     while (*len >= 10)
     {
@@ -249,7 +254,7 @@ static void uart_try_parse(uint8_t *buf, uint16_t *len)
     }
 }
 
-static void *uart_rx_thread(void *arg)
+static void *uart_rx_thread(void *arg) /* 循环 read → uart_try_parse */
 {
     (void)arg;
     uint8_t buf[DS_UART_RX_BUF_SIZE];
@@ -288,7 +293,7 @@ static void *uart_rx_thread(void *arg)
     return NULL;
 }
 
-int uart_proto_open(const char *device_path, unsigned int baudrate)
+int uart_proto_open(const char *device_path, unsigned int baudrate) /* O_NONBLOCK open */
 {
     if (g_uart_fd >= 0)
     {
@@ -316,7 +321,7 @@ int uart_proto_open(const char *device_path, unsigned int baudrate)
     return 0;
 }
 
-int uart_proto_start_rx(void)
+int uart_proto_start_rx(void) /* pthread 读串口 */
 {
     if (g_uart_fd < 0)
     {
@@ -338,7 +343,7 @@ int uart_proto_start_rx(void)
     return 0;
 }
 
-int uart_proto_init(const char *device_path, unsigned int baudrate)
+int uart_proto_init(const char *device_path, unsigned int baudrate) /* open + start_rx */
 {
     if (uart_proto_open(device_path, baudrate) != 0)
     {
@@ -347,7 +352,7 @@ int uart_proto_init(const char *device_path, unsigned int baudrate)
     return uart_proto_start_rx();
 }
 
-void uart_proto_deinit(void)
+void uart_proto_deinit(void) /* join RX、close fd */
 {
     if (g_rx_started)
     {
@@ -362,17 +367,17 @@ void uart_proto_deinit(void)
     }
 }
 
-int uart_proto_send_rsp(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uint16_t payload_len)
+int uart_proto_send_rsp(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uint16_t payload_len) /* msg_type=RSP */
 {
     return uart_send_frame(DS_UART_MSG_RSP, cmd_id, seq, payload, payload_len);
 }
 
-int uart_proto_send_evt(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uint16_t payload_len)
+int uart_proto_send_evt(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uint16_t payload_len) /* msg_type=EVT */
 {
     return uart_send_frame(DS_UART_MSG_EVT, cmd_id, seq, payload, payload_len);
 }
 
-void uart_proto_set_rx_callback(ds_uart_frame_cb_t cb, void *user_data)
+void uart_proto_set_rx_callback(ds_uart_frame_cb_t cb, void *user_data) /* 须在 start_rx 前调用 */
 {
     g_rx_cb = cb;
     g_rx_user = user_data;

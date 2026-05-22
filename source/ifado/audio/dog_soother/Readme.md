@@ -60,6 +60,16 @@ export DS_UART_DEBUG=1   # 打印收发帧 hex
 
 阶段 1 联调：MCU 发 `SOC_STATUS_GET(0x11)` 应收到 9 字节 RSP；SOC 启动后会主动发 `WORK_STATE_EVT(0x80)`。
 
+## 音频（MI AI / MI AO）
+
+- **AI 采集**：`media/audio_ai.c`（对齐 `ai_demo` + `legacy/test_yamnet.c`，16kHz mono，默认增益 -10dB）
+- **AO 播放**：`media/audio_ao.c`（对齐 `ao_demo`，16kHz，WAV 文件播放）
+- **业务**：`media/audio.c` 主人录音写 `DS_OWNER_PCM_PATH`、播放、音量、10s 自动停录发 `0x84 EVT`
+- **识别线程**：`bark/bark_detect.c` 从 detect 队列滑窗（0.96s / 0.48s hop），`yamnet_inference_topk` 后 **printf Top-K**（与 legacy/test_yamnet 一致）
+- **主线程**：`app_main` 仅 `pause()` 等待退出，不再 `audio_tick` / `bark_control_tick`
+
+板端日志示例：`yamnet ready`、`--- window #0 ...`、`[069] Dog` 等。
+
 ## 运行（legacy 算法测试 test_yamnet）
 
 ```bash

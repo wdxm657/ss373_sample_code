@@ -23,7 +23,7 @@ LOCAL_CXXFLAGS += -std=gnu++11
 LIBS += -L$(BUILD_TOP)/third_part/ncnn/build-star373/install/lib -lncnn
 LIBS += -L$(BUILD_TOP)/third_part/fftw-3.3.10/build_star373/lib -lfftw3f
 LIBS += -lm -lpthread -lstdc++
-LIBS += -lmi_common -lmi_ai -lmi_sys
+LIBS += -lmi_common -lmi_ai -lmi_ao -lmi_sys
 
 # 各子目录仅编译该目录下 *.c（见 sample_code/compile.mk；根目录由 build.mk 的 SUBDIRS:=$(MODULE_PATH) 覆盖）
 SUBDIRS += $(MODULE_PATH)/app

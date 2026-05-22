@@ -5,10 +5,16 @@
 
 int bark_control_init(void);
 void bark_control_deinit(void);
-void bark_control_tick(void);
 
 void bark_control_set_power(uint8_t on);
+
 void bark_control_post_work_state(uint8_t reason);
+
+/* 主循环每秒调用：监听窗、措施轮询、休息倒计时 */
+void bark_control_tick(void);
+
+/* bark_detect 每窗推理后调用；Top-K 已判定为狗叫时 hit=1 */
+void bark_control_on_window_bark(int hit, uint32_t epoch_sec);
 
 uint16_t bark_control_set_mode(
     const uint8_t *payload,

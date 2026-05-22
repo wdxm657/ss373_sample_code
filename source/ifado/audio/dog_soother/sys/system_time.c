@@ -1,3 +1,7 @@
+/**
+ * @file system_time.c
+ * @brief TIME_SET：epoch + 时区 quarter-hour 写 clock 与 TZ
+ */
 #define LOG_TAG "system_time"
 #include "log.h"
 
@@ -25,6 +29,7 @@ uint16_t system_time_apply(
         return 1;
     }
 
+    /* payload: [0..3] epoch LE32, [4] tz quarter-hour (×15min) */
     uint32_t epoch = (uint32_t)payload[0]
         | ((uint32_t)payload[1] << 8)
         | ((uint32_t)payload[2] << 16)

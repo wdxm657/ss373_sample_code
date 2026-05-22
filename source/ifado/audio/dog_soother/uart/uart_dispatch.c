@@ -1,3 +1,7 @@
+/**
+ * @file uart_dispatch.c
+ * @brief MCU REQ 分发到 comfort_store / bark_control / audio / system_time
+ */
 #define LOG_TAG "uart_dispatch"
 #include "log.h"
 
@@ -11,7 +15,7 @@
 #include "audio.h"
 #include "system_time.h"
 
-static void uart_reply_status(uint8_t seq)
+static void uart_reply_status(uint8_t seq) /* 0x11：9 字节状态 RSP */
 {
     uint8_t payload[16];
     uint16_t len = 0;
@@ -26,7 +30,7 @@ static void uart_reply_status(uint8_t seq)
     uart_proto_send_rsp(DS_CMD_STATUS_GET, seq, payload, len);
 }
 
-static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uint16_t payload_len)
+static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uint16_t payload_len) /* switch cmd */
 {
     uint8_t rsp[DS_UART_MAX_PAYLOAD];
     uint16_t rsp_len = 0;
@@ -117,7 +121,7 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
     }
 }
 
-static void uart_on_frame(
+static void uart_on_frame( /* uart_proto RX 回调：仅处理 REQ */
     uint8_t msg_type,
     uint8_t cmd_id,
     uint8_t seq,
@@ -134,18 +138,18 @@ static void uart_on_frame(
     LOG_DEBUG("ignore msg_type=0x%02x cmd=0x%02x\n", msg_type, cmd_id);
 }
 
-int uart_dispatch_init(void)
+int uart_dispatch_init(void) /* 注册 uart_on_frame */
 {
     uart_proto_set_rx_callback(uart_on_frame, NULL);
     return 0;
 }
 
-void uart_dispatch_deinit(void)
+void uart_dispatch_deinit(void) /* 注销回调 */
 {
     uart_proto_set_rx_callback(NULL, NULL);
 }
 
-void uart_dispatch_on_frame(
+void uart_dispatch_on_frame( /* 测试注入，与 RX 路径相同 */
     uint8_t msg_type,
     uint8_t cmd_id,
     uint8_t seq,

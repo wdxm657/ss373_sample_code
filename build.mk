@@ -137,3 +137,4 @@ endif
 endif
 
 include $(BUILD_TOP)/compile.mk
+-include $(MODULE_PATH)/$(notdir $(MODULE_PATH))_post.mk

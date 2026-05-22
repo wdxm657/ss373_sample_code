@@ -8,6 +8,7 @@
 int comfort_store_init(void);
 void comfort_store_deinit(void);
 
+/* 填充 STATUS_GET 响应体（9 字节，首字节为 status） */
 void comfort_store_fill_status_payload(uint8_t *out, uint16_t out_cap, uint16_t *out_len);
 
 void comfort_store_set_power(uint8_t on);
@@ -29,5 +30,9 @@ uint16_t comfort_store_factory_reset(
 
 ds_work_state_t comfort_store_get_work_state(void);
 void comfort_store_set_work_state(ds_work_state_t state);
+
+void comfort_store_set_calm_runtime(ds_calm_mode_t mode, uint8_t enabled_mask, uint8_t us_mask);
+
+void comfort_store_apply_strategy(void);
 
 #endif /* DOG_SOOTHER_COMFORT_STORE_H_ */

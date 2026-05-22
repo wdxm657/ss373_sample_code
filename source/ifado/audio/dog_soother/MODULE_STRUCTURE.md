@@ -22,7 +22,10 @@ dog_soother/
 │   ├── bark_detect.c/h
 │   └── bark_control.c/h
 ├── media/                 # 音频录放、超声波
-│   ├── audio.c/h
+│   ├── audio_sys.c/h      # MI_SYS 初始化
+│   ├── audio_ai.c/h       # MI AI 采集（16kHz，参考 ai_demo / legacy test_yamnet）
+│   ├── audio_ao.c/h       # MI AO 播放（参考 ao_demo）
+│   ├── audio.c/h          # 录音/播放/音量 UART 业务
 │   └── ultrasonic.c/h
 ├── store/                 # 运行时状态、安抚记录、恢复出厂
 │   └── comfort_store.c/h
@@ -63,7 +66,10 @@ make source/ifado/audio/dog_soother
 | uart_proto / uart_dispatch | 已实现帧收发与命令分发骨架 |
 | comfort_store / STATUS_GET | 已实现默认状态回包 |
 | system_time | 已实现 TIME_SET 基础逻辑 |
-| audio / ultrasonic / bark_detect | 占位，待接入 MI AI / AO / 超声驱动 |
+| audio_ai / audio_ao | 已实现 MI AI/AO 常驻与读帧/播 WAV |
+| audio 录音/播放 | 已实现主人 WAV 录放、10s 自动停录 EVT |
+| bark_detect | YAMNet 滑窗推理（Top-K 打印，暂无安抚业务） |
+| ultrasonic | 占位 |
 | bark_control 自动安抚 | 占位，待阶段 4 填充 |
 
 接口字段以 `vendor/ble_egg_anfu/docs/BLE_UART接口设计_V1.md` 为准。

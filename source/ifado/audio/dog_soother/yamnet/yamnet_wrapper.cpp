@@ -1031,7 +1031,7 @@ int yamnet_inference_topk(yamnet_context_t *ctx, const float *audio_data, int au
     // 分割成patches (50%重叠)
     std::vector<std::vector<std::vector<float>>> patches;
     int num_frames = mel_spectrogram.size() - 1;
-    LOG_DEBUG("num_frames: %d\n", num_frames);
+    // LOG_DEBUG("num_frames: %d\n", num_frames);
     std::vector<std::vector<std::pair<int, float>>> all_topk;
 
     int patch_hop = yamnet_params::PATCH_FRAMES / 2; // 50%重叠
@@ -1053,7 +1053,7 @@ int yamnet_inference_topk(yamnet_context_t *ctx, const float *audio_data, int au
         patches.push_back(patch);
     }
 
-    LOG_DEBUG("patches.size(): %d\n", patches.size());
+    // LOG_DEBUG("patches.size(): %d\n", patches.size());
     if (patches.empty())
     {
         return -1;

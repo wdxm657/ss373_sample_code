@@ -1,12 +1,13 @@
 #ifndef DOG_SOOTHER_UART_CMD_H_
 #define DOG_SOOTHER_UART_CMD_H_
 
-/* MCU -> SOC REQ cmdId，须与 vendor/ble_egg_anfu/app_uart.h 一致 */
+/* 帧 msg_type */
 #define DS_UART_MSG_REQ 0x01
 #define DS_UART_MSG_RSP 0x02
 #define DS_UART_MSG_EVT 0x03
 #define DS_UART_PROTO_VER 0x01
 
+/* MCU -> SOC 请求 cmdId（须与 vendor/ble_egg_anfu/app_uart.h 一致） */
 #define DS_CMD_POWER_CTRL 0x10
 #define DS_CMD_STATUS_GET 0x11
 #define DS_CMD_VOLUME_SET 0x12
@@ -25,7 +26,7 @@
 #define DS_CMD_FACTORY_RESET 0x50
 #define DS_CMD_BT_LINK_NOTIFY 0x60
 
-/* SOC -> MCU EVT */
+/* SOC -> MCU 事件 cmdId */
 #define DS_EVT_WORK_STATE 0x80
 #define DS_EVT_BARK_DETECTED 0x81
 #define DS_EVT_MEASURE_EXEC 0x82

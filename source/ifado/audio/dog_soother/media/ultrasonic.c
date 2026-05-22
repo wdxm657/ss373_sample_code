@@ -1,9 +1,13 @@
+/**
+ * @file ultrasonic.c
+ * @brief 超声波驱动占位（联调前仅日志）
+ */
 #define LOG_TAG "ultrasonic"
 #include "log.h"
 
 #include "ultrasonic.h"
 
-int ultrasonic_init(void)
+int ultrasonic_init(void) /* 硬件未接时直接成功 */
 {
     return 0;
 }

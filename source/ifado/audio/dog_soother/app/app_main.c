@@ -1,3 +1,7 @@
+/**
+ * @file app_main.c
+ * @brief 模块初始化、UART 启动、主线程 pause 等待 SIGINT
+ */
 #define LOG_TAG "app_main"
 #include "log.h"
 
@@ -17,15 +21,16 @@
 #include <string.h>
 #include <unistd.h>
 
-static volatile int g_running = 1;
+static volatile int g_running = 1; /* SIGINT/SIGTERM 置 0 退出 */
 
+/* 信号处理：请求主循环退出 */
 static void on_signal(int sig)
 {
     (void)sig;
     g_running = 0;
 }
 
-static void print_usage(const char *prog)
+static void print_usage(const char *prog) /* 打印 -D/--device 等帮助 */
 {
     printf("Usage: %s [options]\n", prog);
     printf("  -D, --device PATH   UART device (default %s, env DS_UART_DEVICE)\n", DS_UART_DEVICE);
@@ -33,6 +38,7 @@ static void print_usage(const char *prog)
     printf("Env: DS_UART_DEBUG=1  hex log for TX/RX frames\n");
 }
 
+/* 优先级：环境变量 DS_UART_DEVICE > 命令行 -D > app_config 默认 */
 static const char *pick_uart_device(int argc, char **argv)
 {
     const char *env = getenv("DS_UART_DEVICE");
@@ -57,6 +63,7 @@ static const char *pick_uart_device(int argc, char **argv)
 
 int app_main_run(int argc, char **argv)
 {
+    /* 采集/录制/识别在各自线程运行，本线程仅阻塞等待退出 */
     const char *uart_dev = pick_uart_device(argc, argv);
 
     signal(SIGINT, on_signal);
@@ -64,6 +71,7 @@ int app_main_run(int argc, char **argv)
 
     LOG_INFO("dog_soother start, uart=%s baud=%u\n", uart_dev, DS_UART_BAUDRATE);
 
+    /* 顺序：状态存储 → 音频(含采集/录) → 超声占位 → 识别线程；UART 在音频就绪后 */
     if (comfort_store_init() != 0 || audio_init() != 0 || ultrasonic_init() != 0 || bark_control_init() != 0)
     {
         LOG_ERROR("module init failed\n");
@@ -90,21 +98,21 @@ int app_main_run(int argc, char **argv)
         return 1;
     }
 
-    /* 上电通知 MCU：当前为监测态 */
     bark_control_post_work_state(0);
 
+    LOG_INFO("main idle (capture/rec/detect threads running), Ctrl+C to exit\n");
     while (g_running)
     {
         bark_control_tick();
-        audio_tick();
-        usleep(50000);
+        sleep(1);
     }
 
+    /* 先停 UART；再停音频流（关闭 detect/rec 队列）；最后停识别线程 */
     uart_dispatch_deinit();
     uart_proto_deinit();
-    bark_control_deinit();
     ultrasonic_deinit();
     audio_deinit();
+    bark_control_deinit();
     comfort_store_deinit();
 
     LOG_INFO("dog_soother exit\n");

@@ -1,0 +1,103 @@
+/customer/sample_code/bin # ./dog_soother
+[app_main] I: dog_soother start, uart=/dev/ttyS1 baud=115200
+[comfort_store] I: comfort_store init
+[audio_sys] I: MI_SYS_Init ok
+(ST_Common_AiOpenDev 40)exec function pass
+(ST_Common_AiAttachIf 49)exec function pass
+(ST_Common_AiAttachIf 50)exec function pass
+(ST_Common_AiAttachIf 51)exec function pass
+(ST_Common_AiEnableChnGroup 58)exec function pass
+[audio_ai] I: audio_ai ready dev=0 grp=0 gain=-10 dB
+(ST_Common_AoOpenDev 94)exec function pass
+(ST_Common_AoAttachIf 102)exec function pass
+(ST_Common_AoAttachIf 103)exec function pass
+(ST_Common_AoAttachIf 104)exec function pass
+[audio_ao] I: audio_ao ready dev=0 16kHz mono
+[audio_stream] I: audio_stream started
+[audio] I: audio init ok (AI+AO+capture+rec thread)
+[yamnet_wrapper.cpp] D: YAMNet: ctx=0x1e5490, threshold=0.250000
+[audio] I: audio rec thread start
+[audio_stream] I: audio capture thread start
+[bark_detect] I: yamnet ready model=/customer/sample_code/bin/userdata/yamnet_model/yamnet.ncnn threshold=0.25 win=0.96s hop=0.96s
+[uart_proto] I: uart opened /dev/ttyS1 @ 115200 (debug=0)
+[uart_proto] I: uart rx thread started
+[bark_control] I: EVT WORK_STATE work=1 reason=0
+[app_main] I: main idle (capture/rec/detect threads running), Ctrl+C to exit
+[bark_detect] I: bark_detect thread start
+
+--- window #0 [0.00 - 0.96] s | infer 633.95 ms | RTF 0.6599 ---
+  1. [494] Silence                                   100.00%
+  2. [000] Speech                                    0.00%
+  3. [132] Music                                     0.00%
+  4. [500] Inside, small room                        0.00%
+  5. [003] Narration, monologue                      0.00%
+
+--- window #1 [0.96 - 1.92] s | infer 616.16 ms | RTF 0.6408 ---
+  1. [494] Silence                                   100.00%
+  2. [000] Speech                                    0.00%
+  3. [132] Music                                     0.00%
+  4. [500] Inside, small room                        0.00%
+  5. [003] Narration, monologue                      0.00%
+
+--- window #2 [1.92 - 2.88] s | infer 625.56 ms | RTF 0.6506 ---
+  1. [494] Silence                                   100.00%
+  2. [000] Speech                                    0.00%
+  3. [132] Music                                     0.00%
+  4. [500] Inside, small room                        0.00%
+  5. [003] Narration, monologue                      0.00%
+^C[audio] I: audio rec thread exit
+[audio_stream] I: audio capture thread exit
+(ST_Common_AiDisableChnGroup 65)exec function pass
+[audio_ai] I: audio_ai capture stopped (ChnGroup disabled)
+[audio_stream] I: audio_stream stopped
+(ST_Common_AoCloseDev 111)exec function pass
+(ST_Common_AiCloseDev 72)exec function pass
+[audio_ai] I: audio_ai closed
+
+--- window #3 [2.88 - 3.84] s | infer 600.94 ms | RTF 0.6250 ---
+  1. [494] Silence                                   100.00%
+  2. [000] Speech                                    0.00%
+  3. [132] Music                                     0.00%
+  4. [500] Inside, small room                        0.00%
+  5. [003] Narration, monologue                      0.00%
+[bark_detect] I: bark_detect thread exit
+[app_main] I: dog_soother exit
+
+
+
+/customer/sample_code/bin # ./test_yamnet -m userdata/yamnet_model/yamnet.ncnn -
+I ain -s 3 -g 30
+[yamnet_wrapper.cpp] D: YAMNet: ctx=0x1c5ac0, threshold=0.250000
+Model: userdata/yamnet_model/yamnet.ncnn
+Input type: ain (capture 3s, gain=30)
+Sliding: window 0.96s, hop 0.96s, reader 1x real-time
+
+(reader_stream_ain 1095)exec function pass
+(ST_Common_AiOpenDev 40)exec function pass
+(ST_Common_AiAttachIf 49)exec function pass
+(ST_Common_AiAttachIf 50)exec function pass
+(ST_Common_AiAttachIf 51)exec function pass
+(ST_Common_AiEnableChnGroup 58)exec function pass
+(reader_stream_ain 1109)exec function pass
+[reader] ain capture 3 s (gain=30), real-time
+
+--- window #0 [0.00 - 0.96] s | infer 623.46 ms | RTF 0.6494 ---
+  1. [294] Vehicle                                   19.71%
+  2. [300] Motor vehicle (road)                      13.89%
+  3. [503] Outside, urban or manmade                 13.55%
+  4. [301] Car                                       12.00%
+  5. [277] Wind                                      11.88%
+
+--- window #1 [0.96 - 1.92] s | infer 604.52 ms | RTF 0.6297 ---
+  1. [317] Police car (siren)                        7.79%
+  2. [294] Vehicle                                   7.63%
+  3. [300] Motor vehicle (road)                      6.85%
+  4. [316] Emergency vehicle                         6.26%
+  5. [390] Siren                                     4.64%
+(ST_Common_AiDisableChnGroup 65)exec function pass
+(ST_Common_AiCloseDev 72)exec function pass
+(reader_stream_ain 1176)exec function pass
+Captured audio too short: 13312 samples
+
+=== summary: 2 windows, avg infer 613.99 ms, avg RTF 0.6396 ===
+/customer/sample_code/bin #
