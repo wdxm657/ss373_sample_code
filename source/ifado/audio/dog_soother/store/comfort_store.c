@@ -49,7 +49,7 @@ void comfort_store_apply_strategy(void)
 }
 
 static ds_runtime_t g_rt = {
-    .power_on = 1,
+    .power_on = 0,
     .work_state = DS_WORK_OFF,
     .bt_linked = 0,
     .owner_voice_exist = 0,

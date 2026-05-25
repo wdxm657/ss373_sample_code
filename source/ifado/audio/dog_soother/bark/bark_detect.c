@@ -44,7 +44,7 @@ typedef struct
 
 static bark_yamnet_state_t g_yn;
 static volatile int g_detect_thread_run;
-static volatile int g_detect_active = 1;
+static volatile int g_detect_active = 0;
 static pthread_t g_detect_thread;
 
 static uint32_t bark_now_epoch(void)

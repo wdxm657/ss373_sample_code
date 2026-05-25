@@ -1,6 +1,6 @@
 /**
  * @file bark_control.c
- * @brief 监听 → 识别(10s/3次) → 执行 → 复听 → 休息；策略见 calm_strategy
+ * @brief 监听/复听 → 识别(10s/3次) → 执行 → 休息；策略见 calm_strategy
  */
 #define LOG_TAG "bark_control"
 #include "log.h"
@@ -122,11 +122,16 @@ static void bark_set_work_state(ds_work_state_t st, uint8_t reason)
 
 static void bark_enter_identifying_locked(time_t now)
 {
-    bark_set_work_state(DS_WORK_IDENTIFYING, 1);
-    g_fsm.listen_phase = BARK_LISTEN_IDENTIFY;
+    int post = (g_fsm.listen_phase == BARK_LISTEN_POST_MEASURE) ? 1 : 0;
+
+    bark_set_work_state(DS_WORK_IDENTIFYING, post ? 8u : 1u);
+    if (!post)
+    {
+        g_fsm.listen_phase = BARK_LISTEN_IDENTIFY;
+    }
     g_fsm.win_count = 1;
     g_fsm.win_deadline = now + DS_MONITOR_WINDOW_SEC;
-    LOG_INFO("identifying start deadline=%ld\n", (long)g_fsm.win_deadline);
+    LOG_INFO("identifying start post=%d deadline=%ld\n", post, (long)g_fsm.win_deadline);
 }
 
 static void bark_identifying_back_to_monitor_locked(void)
@@ -354,6 +359,19 @@ static void bark_identifying_start_session_locked(uint32_t bark_ts)
     bark_listen_reset_locked();
 }
 
+static void bark_identifying_post_continue_locked(void)
+{
+    if (g_fsm.action_idx < g_fsm.action_cnt)
+    {
+        bark_begin_action_locked();
+    }
+    else
+    {
+        bark_enter_rest_locked(0);
+    }
+    bark_listen_reset_locked();
+}
+
 static void bark_after_measure_done_locked(void)
 {
     time_t now = time(NULL);
@@ -412,17 +430,20 @@ static void bark_on_window_hit_locked(uint32_t epoch_sec)
         return;
     }
 
-    /* 监听：第一次狗叫 → 进入识别 */
-    if (st == DS_WORK_MONITORING && g_fsm.listen_phase == BARK_LISTEN_IDLE)
+    /* 监听 / 措施后复听：第一次狗叫 → 进入识别（复听保留 POST_MEASURE 标记） */
+    if (st == DS_WORK_MONITORING &&
+        (g_fsm.listen_phase == BARK_LISTEN_IDLE ||
+         (g_fsm.listen_phase == BARK_LISTEN_POST_MEASURE && g_fsm.in_session)))
     {
         bark_enter_identifying_locked(now);
         return;
     }
 
-    /* 识别：继续累计，满 3 次进入安抚执行 */
+    /* 识别：继续累计，满 3 次 → 首次进会话执行 / 复听进下一措施或失败休息 */
     if (st == DS_WORK_IDENTIFYING)
     {
-        if (g_fsm.listen_phase != BARK_LISTEN_IDENTIFY)
+        if (g_fsm.listen_phase != BARK_LISTEN_IDENTIFY &&
+            g_fsm.listen_phase != BARK_LISTEN_POST_MEASURE)
         {
             return;
         }
@@ -432,74 +453,36 @@ static void bark_on_window_hit_locked(uint32_t epoch_sec)
             return;
         }
         g_fsm.win_count++;
-        LOG_INFO("identifying count=%d\n", g_fsm.win_count);
-        if (g_fsm.win_count >= DS_MONITOR_BARK_TRIGGER)
+        LOG_INFO("identifying count=%d post=%d\n",
+                 g_fsm.win_count,
+                 g_fsm.listen_phase == BARK_LISTEN_POST_MEASURE);
+        if (g_fsm.win_count < DS_MONITOR_BARK_TRIGGER)
+        {
+            return;
+        }
+        if (g_fsm.listen_phase == BARK_LISTEN_POST_MEASURE)
+        {
+            bark_identifying_post_continue_locked();
+        }
+        else
         {
             bark_identifying_start_session_locked(epoch_sec);
         }
         return;
     }
-
-    /* 措施后复听（仍在 MONITORING，不经过识别态） */
-    if (st != DS_WORK_MONITORING || g_fsm.listen_phase != BARK_LISTEN_POST_MEASURE || !g_fsm.in_session)
-    {
-        return;
-    }
-
-    if (g_fsm.win_count == 0)
-    {
-        g_fsm.win_count = 1;
-        g_fsm.win_deadline = now + DS_MONITOR_WINDOW_SEC;
-        LOG_INFO("post-measure window start deadline=%ld\n", (long)g_fsm.win_deadline);
-        return;
-    }
-
-    if (now > g_fsm.win_deadline)
-    {
-        g_fsm.win_count = 1;
-        g_fsm.win_deadline = now + DS_MONITOR_WINDOW_SEC;
-        LOG_INFO("post-measure window restarted\n");
-        return;
-    }
-
-    g_fsm.win_count++;
-    LOG_INFO("post-measure count=%d\n", g_fsm.win_count);
-    if (g_fsm.win_count < DS_MONITOR_BARK_TRIGGER)
-    {
-        return;
-    }
-
-    if (g_fsm.action_idx < g_fsm.action_cnt)
-    {
-        bark_begin_action_locked();
-    }
-    else
-    {
-        bark_enter_rest_locked(0);
-    }
-    bark_listen_reset_locked();
 }
 
 static void bark_tick_listen_locked(void)
 {
     time_t now = time(NULL);
 
-    if (g_fsm.listen_phase == BARK_LISTEN_POST_MEASURE)
+    /* 措施后复听：一直无狗叫，超时判定安抚成功 */
+    if (g_fsm.in_session && g_fsm.listen_phase == BARK_LISTEN_POST_MEASURE &&
+        g_fsm.win_count == 0 && g_fsm.measure_end_ts > 0 &&
+        now >= g_fsm.measure_end_ts + DS_MONITOR_WINDOW_SEC)
     {
-        if (g_fsm.win_count == 0 && g_fsm.measure_end_ts > 0 &&
-            now >= g_fsm.measure_end_ts + DS_MONITOR_WINDOW_SEC)
-        {
-            LOG_INFO("post-measure quiet success\n");
-            bark_enter_rest_locked(1);
-            return;
-        }
-        if (g_fsm.win_count > 0 && g_fsm.win_deadline > 0 && now >= g_fsm.win_deadline &&
-            g_fsm.win_count < DS_MONITOR_BARK_TRIGGER)
-        {
-            LOG_INFO("post-measure window end count=%d success\n", g_fsm.win_count);
-            bark_enter_rest_locked(1);
-            return;
-        }
+        LOG_INFO("post-measure quiet success\n");
+        bark_enter_rest_locked(1);
     }
 }
 
@@ -507,12 +490,22 @@ static void bark_tick_identifying_locked(void)
 {
     time_t now = time(NULL);
 
-    if (g_fsm.win_deadline > 0 && now >= g_fsm.win_deadline &&
-        g_fsm.win_count < DS_MONITOR_BARK_TRIGGER)
+    if (g_fsm.win_deadline == 0 || now < g_fsm.win_deadline ||
+        g_fsm.win_count >= DS_MONITOR_BARK_TRIGGER)
     {
-        LOG_INFO("identifying window expired count=%d\n", g_fsm.win_count);
-        bark_identifying_back_to_monitor_locked();
+        return;
     }
+
+    if (g_fsm.in_session && g_fsm.listen_phase == BARK_LISTEN_POST_MEASURE)
+    {
+        LOG_INFO("post-measure identifying expired count=%d -> success rest\n",
+                 g_fsm.win_count);
+        bark_enter_rest_locked(1);
+        return;
+    }
+
+    LOG_INFO("identifying window expired count=%d -> monitoring\n", g_fsm.win_count);
+    bark_identifying_back_to_monitor_locked();
 }
 
 static void bark_tick_acting_locked(void)
