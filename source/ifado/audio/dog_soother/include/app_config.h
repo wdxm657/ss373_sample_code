@@ -41,7 +41,7 @@
 #define DS_AI_GAIN_DB    30
 #endif
 /* APP 音量 0~30：gain = level + DS_AO_VOLUME_BASE_GAIN */
-#define DS_AO_VOLUME_BASE_GAIN (-30)
+#define DS_AO_VOLUME_BASE_GAIN (-20)
 
 #define DS_AUDIO_SAMPLE_RATE 16000
 

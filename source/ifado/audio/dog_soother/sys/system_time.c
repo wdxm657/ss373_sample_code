@@ -58,7 +58,9 @@ uint16_t system_time_apply(
     setenv("TZ", tz_buf, 1);
     tzset();
 
-    LOG_INFO("time set epoch=%u tz=%s\n", epoch, tz_buf);
+    // 打印格式化时间
+    // LOG_INFO("time set to %s\n", tz_buf);
+    LOG_INFO("formatted time: %s", ctime(&ts.tv_sec));
     rsp[0] = DS_UART_STATUS_OK;
     return 1;
 }

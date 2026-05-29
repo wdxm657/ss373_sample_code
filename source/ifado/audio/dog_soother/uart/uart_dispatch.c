@@ -40,6 +40,7 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
     switch (cmd_id)
     {
     case DS_CMD_STATUS_GET:
+        LOG_INFO("STATUS_GET req\n");
         uart_reply_status(seq);
         return;
 
@@ -61,6 +62,7 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
         return;
 
     case DS_CMD_VOLUME_SET:
+        LOG_INFO("VOLUME_SET req vol=%u\n", payload_len >= 1 ? payload[0] : 0xFF);
         rsp_len = audio_set_volume(payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;
@@ -96,6 +98,11 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;
 
+    case DS_CMD_CALM_RECORD_DELETE:
+        rsp_len = comfort_store_delete_oldest_record(payload, payload_len, rsp, sizeof(rsp));
+        uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
+        return;
+
     case DS_CMD_FACTORY_RESET:
         rsp_len = comfort_store_factory_reset(payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
@@ -121,13 +128,13 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
     }
 }
 
-static void uart_on_frame( /* uart_proto RX 回调：仅处理 REQ */
-    uint8_t msg_type,
-    uint8_t cmd_id,
-    uint8_t seq,
-    const uint8_t *payload,
-    uint16_t payload_len,
-    void *user_data)
+static void uart_on_frame(/* uart_proto RX 回调：仅处理 REQ */
+                          uint8_t msg_type,
+                          uint8_t cmd_id,
+                          uint8_t seq,
+                          const uint8_t *payload,
+                          uint16_t payload_len,
+                          void *user_data)
 {
     (void)user_data;
     if (msg_type == DS_UART_MSG_REQ)
@@ -149,12 +156,12 @@ void uart_dispatch_deinit(void) /* 注销回调 */
     uart_proto_set_rx_callback(NULL, NULL);
 }
 
-void uart_dispatch_on_frame( /* 测试注入，与 RX 路径相同 */
-    uint8_t msg_type,
-    uint8_t cmd_id,
-    uint8_t seq,
-    const uint8_t *payload,
-    uint16_t payload_len)
+void uart_dispatch_on_frame(/* 测试注入，与 RX 路径相同 */
+                            uint8_t msg_type,
+                            uint8_t cmd_id,
+                            uint8_t seq,
+                            const uint8_t *payload,
+                            uint16_t payload_len)
 {
     uart_on_frame(msg_type, cmd_id, seq, payload, payload_len, NULL);
 }

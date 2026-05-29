@@ -6,7 +6,7 @@
 /* 工作状态，与 BLE_UART接口设计_V1.md / MCU app_ctrl 一致 */
 typedef enum
 {
-    DS_WORK_OFF = 0,           /* 关机或未上电 */
+    DS_WORK_OFF = 0,           /* （关机）未开启音频识别 */
     DS_WORK_MONITORING = 1,    /* 监测中，等待吠叫 */
     DS_WORK_IDENTIFYING = 2,   /* 识别/判定中 */
     DS_WORK_ACTING = 3,        /* 执行安抚措施 */

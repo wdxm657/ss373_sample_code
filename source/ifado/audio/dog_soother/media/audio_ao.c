@@ -109,6 +109,25 @@ int audio_ao_set_volume_level(uint8_t level_0_30) /* 钳位到 0~30 */
     return audio_ao_apply_gain_level(level_0_30);
 }
 
+int audio_ao_get_volume_level(uint8_t *level_0_30) /* 通过 MI_AO_GetVolume 读取硬件当前音量 */
+{
+    if (!g_ao_ready || !level_0_30)
+    {
+        return -1;
+    }
+    MI_S16 left, right;
+    if (MI_AO_GetVolume(g_ao_dev, &left, &right) != MI_SUCCESS)
+    {
+        return -1;
+    }
+    /* gain = level + DS_AO_VOLUME_BASE_GAIN => level = gain - DS_AO_VOLUME_BASE_GAIN */
+    int level = (int)left - DS_AO_VOLUME_BASE_GAIN;
+    if (level < 0)  level = 0;
+    if (level > 30) level = 30;
+    *level_0_30 = (uint8_t)level;
+    return 0;
+}
+
 static void *audio_ao_play_thread(void *arg) /* 跳过 WAV 头后循环 MI_AO_Write */
 {
     (void)arg;

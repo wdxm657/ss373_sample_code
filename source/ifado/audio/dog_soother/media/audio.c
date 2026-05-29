@@ -17,6 +17,8 @@
 
 #include "st_common_audio.h"
 #include "st_common.h"
+#include "comfort_store.h"
+#include "bark_detect.h"
 
 #include <pthread.h>
 #include <stdio.h>
@@ -34,6 +36,9 @@ static time_t g_rec_start_sec;      /* 用于 10s 自动停 */
 
 static volatile int g_rec_thread_run;
 static pthread_t g_rec_thread;
+
+static volatile int g_owner_rec_ai_paused;   /* 1=因主人录音暂停了音频识别 */
+static volatile int g_owner_play_ai_paused;  /* 1=因主人播放暂停了音频识别 */
 
 static int audio_is_recording(void) /* 供 audio_stream rec_active 回调 */
 {
@@ -88,6 +93,11 @@ static void audio_owner_rec_stop_internal(uint8_t auto_stop) /* 写头、发 0x8
         return;
     }
     g_recording = 0;
+    if (g_owner_rec_ai_paused)
+    {
+        g_owner_rec_ai_paused = 0;
+        bark_detect_set_active(1);
+    }
 
     if (g_rec_fp)
     {
@@ -177,6 +187,12 @@ static void *audio_rec_thread(void *arg) /* audio_stream_rec_pop → 写盘 / �
         {
             break;
         }
+        /* 主人播放结束时恢复音频识别 */
+        if (g_owner_play_ai_paused && !audio_ao_is_playing())
+        {
+            g_owner_play_ai_paused = 0;
+            bark_detect_set_active(1);
+        }
         usleep(10000);
     }
     LOG_INFO("audio rec thread exit\n");
@@ -223,6 +239,8 @@ int audio_init(void) /* AI+AO+采集流+录制线程；失败时回滚已初始�
     g_rec_fp = NULL;
     g_rec_pcm_bytes = 0;
     g_owner_duration_sec = 0;
+    g_owner_rec_ai_paused = 0;
+    g_owner_play_ai_paused = 0;
 
     if (audio_ai_init(ai_gain) != 0)
     {
@@ -296,6 +314,16 @@ void audio_delete_owner_rec(void) /* 停录并删除 owner.wav */
     g_owner_duration_sec = 0;
 }
 
+uint8_t audio_get_volume(void) /* 优先读硬件，失败回退到缓存 */
+{
+    uint8_t hw_level;
+    if (audio_ao_get_volume_level(&hw_level) == 0)
+    {
+        return hw_level;
+    }
+    return g_volume;
+}
+
 uint16_t audio_set_volume( /* payload[0]=0~30；rsp: status + 当前音量 */
     const uint8_t *payload,
     uint16_t payload_len,
@@ -311,6 +339,7 @@ uint16_t audio_set_volume( /* payload[0]=0~30；rsp: status + 当前音量 */
     {
         g_volume = 30;
     }
+    LOG_INFO("set volume %u\n", g_volume);
     if (audio_ao_set_volume_level(g_volume) != 0)
     {
         rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
@@ -348,6 +377,19 @@ uint16_t audio_handle_uart_cmd( /* 0x20~0x25 主人录音；返回 rsp 长度，
             rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
             return 1;
         }
+        {
+            ds_work_state_t ws = comfort_store_get_work_state();
+            if (ws != DS_WORK_OFF && ws != DS_WORK_MONITORING)
+            {
+                rsp[0] = DS_UART_STATUS_STATE_CONFLICT;
+                return 1;
+            }
+            if (ws == DS_WORK_MONITORING)
+            {
+                bark_detect_set_active(0);
+                g_owner_rec_ai_paused = 1;
+            }
+        }
         ST_Common_CheckMkdirOutFile((char *)DS_OWNER_PCM_PATH);
         g_rec_fp = fopen(DS_OWNER_PCM_PATH, "wb");
         if (!g_rec_fp)
@@ -378,6 +420,19 @@ uint16_t audio_handle_uart_cmd( /* 0x20~0x25 主人录音；返回 rsp 长度，
             rsp[0] = DS_UART_STATUS_NOT_FOUND;
             return 1;
         }
+        {
+            ds_work_state_t ws = comfort_store_get_work_state();
+            if (ws != DS_WORK_OFF && ws != DS_WORK_MONITORING)
+            {
+                rsp[0] = DS_UART_STATUS_STATE_CONFLICT;
+                return 1;
+            }
+            if (ws == DS_WORK_MONITORING)
+            {
+                bark_detect_set_active(0);
+                g_owner_play_ai_paused = 1;
+            }
+        }
         if (audio_ao_play_wav_file(DS_OWNER_PCM_PATH) != 0)
         {
             rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
@@ -388,6 +443,11 @@ uint16_t audio_handle_uart_cmd( /* 0x20~0x25 主人录音；返回 rsp 长度，
 
     case DS_CMD_OWNER_REC_PLAY_STOP:
         audio_ao_stop();
+        if (g_owner_play_ai_paused)
+        {
+            g_owner_play_ai_paused = 0;
+            bark_detect_set_active(1);
+        }
         rsp[0] = DS_UART_STATUS_OK;
         return 1;
 

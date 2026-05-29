@@ -269,6 +269,7 @@ static void bark_enter_rest_locked(uint8_t success)
 {
     uint8_t ok_m = g_fsm.last_ok_measure;
     uint8_t ok_s = g_fsm.last_ok_us_sub;
+    uint32_t now_ts;
 
     if (success)
     {
@@ -276,12 +277,15 @@ static void bark_enter_rest_locked(uint8_t success)
         bark_sync_store_from_strategy();
     }
 
+    now_ts = (uint32_t)time(NULL);
+    comfort_store_record_finish(g_fsm.session_id, success, now_ts);
+
     bark_post_session_result_evt(g_fsm.session_id, success ? 1u : 0u, ok_m, ok_s);
     bark_set_work_state(DS_WORK_RESTING, success ? 3u : 4u);
     bark_detect_set_active(0);
     g_fsm.in_session = 0;
     g_fsm.acting_busy = 0;
-    g_fsm.rest_deadline = time(NULL) + DS_CALM_REST_SEC;
+    g_fsm.rest_deadline = now_ts + DS_CALM_REST_SEC;
     bark_listen_reset_locked();
     LOG_INFO("session %u end success=%u rest %ds\n", g_fsm.session_id, success, DS_CALM_REST_SEC);
 }
@@ -296,12 +300,14 @@ static void bark_start_session_locked(uint32_t bark_ts)
     g_fsm.last_ok_us_sub = 0;
     bark_build_session_actions_locked();
     bark_post_session_start_evt(g_fsm.session_id, bark_ts);
+    comfort_store_record_begin(g_fsm.session_id, bark_ts);
     LOG_INFO("calm session %u started\n", g_fsm.session_id);
 }
 
 static void bark_begin_action_locked(void)
 {
     const sess_action_t *act;
+    uint8_t entry_type;
 
     if (g_fsm.action_idx >= g_fsm.action_cnt)
     {
@@ -316,6 +322,13 @@ static void bark_begin_action_locked(void)
     bark_set_work_state(DS_WORK_ACTING, 2);
     bark_detect_set_active(0);
     bark_post_measure_evt(g_fsm.session_id, g_fsm.action_idx, act->measure, act->us_profile);
+
+    /* 将措施类型映射为记录条目类型 */
+    entry_type = comfort_store_measure_to_entry_type(act->measure, act->us_profile);
+    if (entry_type)
+    {
+        comfort_store_record_append_measure(g_fsm.session_id, entry_type, (uint32_t)time(NULL));
+    }
 
     switch (act->measure)
     {
@@ -599,6 +612,17 @@ void bark_control_on_window_bark(int hit, uint32_t epoch_sec)
 
 void bark_control_tick(void)
 {
+    // Heartbeat: send every 2 ticks (~2 seconds) regardless of power state
+    {
+        static int hb_cnt = 0;
+        hb_cnt++;
+        if (hb_cnt >= 2)
+        {
+            hb_cnt = 0;
+            uart_proto_send_evt(DS_EVT_HEARTBEAT, 0, NULL, 0);
+        }
+    }
+
     if (!g_power_on)
     {
         return;

@@ -8,8 +8,23 @@
 #define LOG_TAG "dog_soother"
 #endif
 
-#define LOG_ERROR(fmt, ...) fprintf(stderr, "[%s] E: " fmt, LOG_TAG, ##__VA_ARGS__)
-#define LOG_INFO(fmt, ...)  fprintf(stdout, "[%s] I: " fmt, LOG_TAG, ##__VA_ARGS__)
-#define LOG_DEBUG(fmt, ...) fprintf(stdout, "[%s] D: " fmt, LOG_TAG, ##__VA_ARGS__)
+#define COLOR_RED "\x1b[31m"
+#define COLOR_GREEN "\x1b[32m"
+#define COLOR_YELLOW "\x1b[33m"
+#define COLOR_CYAN "\x1b[36m"
+#define COLOR_RESET "\x1b[0m"
 
+#define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
+
+#define LOG_ERROR(fmt, ...)                                    \
+    printf(COLOR_RED "[ERROR] [%s:%d]: " fmt COLOR_RESET "\n", \
+           __FILENAME__, __LINE__, ##__VA_ARGS__)
+
+#define LOG_INFO(fmt, ...)                                      \
+    printf(COLOR_GREEN "[INFO] [%s:%d]: " fmt COLOR_RESET "\n", \
+           __FILENAME__, __LINE__, ##__VA_ARGS__)
+
+#define LOG_DEBUG(fmt, ...)                                     \
+    printf(COLOR_CYAN "[DEBUG] [%s:%d]: " fmt COLOR_RESET "\n", \
+           __FILENAME__, __LINE__, ##__VA_ARGS__)
 #endif

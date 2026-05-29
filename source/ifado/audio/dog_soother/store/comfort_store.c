@@ -1,6 +1,6 @@
 /**
  * @file comfort_store.c
- * @brief 运行时状态与 STATUS_GET / 出厂重置 / 记录拉取（部分占位）
+ * @brief 运行时状态与 STATUS_GET / 出厂重置 / 安抚记录生成与获取
  */
 #define LOG_TAG "comfort_store"
 #include "log.h"
@@ -10,9 +10,40 @@
 #include "app_config.h"
 #include "audio.h"
 
+#include <stdio.h>
 #include <string.h>
+#include <time.h>
 
-/* 内存态，对应 STATUS_GET payload[1..8] */
+/* ========== 安抚记录持久化文件格式 ========== */
+#define DS_RECORD_FILE_MAGIC 0x44524344u /* 'DCRD' little-endian */
+#define DS_RECORD_FILE_VER 1
+
+#pragma pack(push, 1)
+typedef struct
+{
+    uint32_t magic;  /* DS_RECORD_FILE_MAGIC */
+    uint8_t version; /* DS_RECORD_FILE_VER */
+    uint8_t count;   /* 有效记录数 */
+} ds_record_file_hdr_t;
+
+/* 文件中每条记录的固定部分 + entries 紧随其后 */
+typedef struct
+{
+    uint32_t session_id;
+    uint32_t start_ts;
+    uint32_t end_ts;
+    uint8_t entry_cnt;
+    /* ds_record_entry_t entries[entry_cnt] 紧随其后 */
+} ds_record_file_entry_hdr_t;
+#pragma pack(pop)
+
+/* ========== 内存态记录环形缓存 ========== */
+static ds_session_record_t g_records[DS_RECORD_MAX];
+static uint8_t g_record_cnt;  /* 有效记录数 (0..DS_RECORD_MAX) */
+static uint8_t g_record_head; /* 最旧记录的索引（环形） */
+
+/* ========== 运行时状态 ========== */
+
 typedef struct
 {
     uint8_t power_on;           /* out[1] */
@@ -60,15 +91,251 @@ static ds_runtime_t g_rt = {
     .us_mask = 0x07,
 };
 
-int comfort_store_init(void) /* 从 owner.wav 刷新录音存在标志 */
+/* ========== 记录文件读写 ========== */
+
+static int comfort_store_load_records(void)
+{
+    FILE *fp;
+    ds_record_file_hdr_t hdr;
+    uint8_t i;
+
+    fp = fopen(DS_COMFORT_DB_PATH, "rb");
+    if (!fp)
+    {
+        return -1;
+    }
+    if (fread(&hdr, sizeof(hdr), 1, fp) != 1)
+    {
+        fclose(fp);
+        return -2;
+    }
+    if (hdr.magic != DS_RECORD_FILE_MAGIC || hdr.version != DS_RECORD_FILE_VER)
+    {
+        fclose(fp);
+        return -3;
+    }
+
+    g_record_cnt = 0;
+    g_record_head = 0;
+    for (i = 0; i < hdr.count && i < DS_RECORD_MAX; i++)
+    {
+        ds_record_file_entry_hdr_t fhdr;
+        uint8_t j;
+
+        if (fread(&fhdr, sizeof(fhdr), 1, fp) != 1)
+        {
+            break;
+        }
+        if (fhdr.entry_cnt > DS_RECORD_ENTRY_MAX)
+        {
+            break;
+        }
+
+        ds_session_record_t *rec = &g_records[g_record_cnt];
+        rec->session_id = fhdr.session_id;
+        rec->start_ts = fhdr.start_ts;
+        rec->end_ts = fhdr.end_ts;
+        rec->entry_cnt = fhdr.entry_cnt;
+        for (j = 0; j < fhdr.entry_cnt; j++)
+        {
+            if (fread(&rec->entries[j], sizeof(ds_record_entry_t), 1, fp) != 1)
+            {
+                break;
+            }
+        }
+        if (j < fhdr.entry_cnt)
+        {
+            break;
+        }
+        g_record_cnt++;
+    }
+
+    fclose(fp);
+    LOG_INFO("loaded %u records from %s\n", g_record_cnt, DS_COMFORT_DB_PATH);
+    return 0;
+}
+
+static int comfort_store_save_records(void)
+{
+    FILE *fp;
+    ds_record_file_hdr_t hdr;
+    uint8_t i;
+
+    fp = fopen(DS_COMFORT_DB_PATH, "wb");
+    if (!fp)
+    {
+        LOG_ERROR("save records open failed: %s\n", DS_COMFORT_DB_PATH);
+        return -1;
+    }
+
+    hdr.magic = DS_RECORD_FILE_MAGIC;
+    hdr.version = DS_RECORD_FILE_VER;
+    hdr.count = g_record_cnt;
+    if (fwrite(&hdr, sizeof(hdr), 1, fp) != 1)
+    {
+        fclose(fp);
+        return -2;
+    }
+
+    for (i = 0; i < g_record_cnt; i++)
+    {
+        uint8_t idx = (g_record_head + i) % DS_RECORD_MAX;
+        const ds_session_record_t *rec = &g_records[idx];
+        ds_record_file_entry_hdr_t fhdr;
+        uint8_t j;
+
+        fhdr.session_id = rec->session_id;
+        fhdr.start_ts = rec->start_ts;
+        fhdr.end_ts = rec->end_ts;
+        fhdr.entry_cnt = rec->entry_cnt;
+        if (fwrite(&fhdr, sizeof(fhdr), 1, fp) != 1)
+        {
+            fclose(fp);
+            return -3;
+        }
+        for (j = 0; j < rec->entry_cnt; j++)
+        {
+            if (fwrite(&rec->entries[j], sizeof(ds_record_entry_t), 1, fp) != 1)
+            {
+                fclose(fp);
+                return -4;
+            }
+        }
+    }
+
+    fclose(fp);
+    LOG_INFO("saved %u records to %s\n", g_record_cnt, DS_COMFORT_DB_PATH);
+    return 0;
+}
+
+/* ========== 记录生成 API ========== */
+
+static ds_session_record_t *comfort_store_find_record(uint32_t session_id)
+{
+    uint8_t i;
+
+    for (i = 0; i < g_record_cnt; i++)
+    {
+        uint8_t idx = (g_record_head + i) % DS_RECORD_MAX;
+        if (g_records[idx].session_id == session_id)
+        {
+            return &g_records[idx];
+        }
+    }
+    return NULL;
+}
+
+uint8_t comfort_store_measure_to_entry_type(uint8_t measure, uint8_t us_profile)
+{
+    if (measure == DS_MEASURE_MUSIC)
+    {
+        return DS_RECORD_ENTRY_MUSIC;
+    }
+    if (measure == DS_MEASURE_OWNER_VOICE)
+    {
+        return DS_RECORD_ENTRY_OWNER;
+    }
+    if (measure == DS_MEASURE_ULTRASONIC)
+    {
+        if (us_profile == DS_US_25KHZ)
+            return DS_RECORD_ENTRY_US_25K;
+        if (us_profile == DS_US_30KHZ)
+            return DS_RECORD_ENTRY_US_30K;
+        if (us_profile == DS_US_DUAL)
+            return DS_RECORD_ENTRY_US_DUAL;
+    }
+    return 0;
+}
+
+void comfort_store_record_begin(uint32_t session_id, uint32_t bark_ts)
+{
+    ds_session_record_t *rec;
+
+    /* 缓存已满，淘汰最旧记录 */
+    if (g_record_cnt >= DS_RECORD_MAX)
+    {
+        g_record_head = (g_record_head + 1) % DS_RECORD_MAX;
+        g_record_cnt = DS_RECORD_MAX - 1;
+    }
+
+    /* 新记录写入 tail */
+    uint8_t tail = (g_record_head + g_record_cnt) % DS_RECORD_MAX;
+    rec = &g_records[tail];
+    memset(rec, 0, sizeof(*rec));
+    rec->session_id = session_id;
+    rec->start_ts = bark_ts;
+    rec->end_ts = 0;
+    rec->entry_cnt = 0;
+
+    /* 追加吠叫识别条目 */
+    rec->entries[rec->entry_cnt].type = DS_RECORD_ENTRY_BARK;
+    rec->entries[rec->entry_cnt].ts = bark_ts;
+    rec->entry_cnt++;
+
+    g_record_cnt++;
+    LOG_INFO("record begin session=%u bark_ts=%u\n", session_id, bark_ts);
+}
+
+void comfort_store_record_append_measure(uint32_t session_id, uint8_t type, uint32_t ts)
+{
+    ds_session_record_t *rec = comfort_store_find_record(session_id);
+
+    if (!rec)
+    {
+        LOG_INFO("record append: session %u not found\n", session_id);
+        return;
+    }
+    if (rec->entry_cnt >= DS_RECORD_ENTRY_MAX)
+    {
+        LOG_INFO("record append: entry full session=%u\n", session_id);
+        return;
+    }
+
+    rec->entries[rec->entry_cnt].type = type;
+    rec->entries[rec->entry_cnt].ts = ts;
+    rec->entry_cnt++;
+    LOG_DEBUG("record append session=%u type=0x%02x ts=%u\n", session_id, type, ts);
+}
+
+void comfort_store_record_finish(uint32_t session_id, uint8_t success, uint32_t end_ts)
+{
+    ds_session_record_t *rec = comfort_store_find_record(session_id);
+
+    if (!rec)
+    {
+        LOG_INFO("record finish: session %u not found\n", session_id);
+        return;
+    }
+
+    rec->end_ts = end_ts;
+
+    /* 追加结果条目 */
+    if (rec->entry_cnt < DS_RECORD_ENTRY_MAX)
+    {
+        rec->entries[rec->entry_cnt].type = success ? DS_RECORD_ENTRY_SUCCESS : DS_RECORD_ENTRY_FAIL;
+        rec->entries[rec->entry_cnt].ts = end_ts;
+        rec->entry_cnt++;
+    }
+
+    /* 持久化到文件 */
+    comfort_store_save_records();
+    LOG_INFO("record finish session=%u success=%u entries=%u\n",
+             session_id, success, rec->entry_cnt);
+}
+
+/* ========== 运行时状态 API ========== */
+
+int comfort_store_init(void) /* 从 owner.wav 刷新录音存在标志，加载安抚记录 */
 {
     audio_refresh_owner_info(&g_rt.owner_voice_exist, &g_rt.owner_duration_sec);
+    comfort_store_load_records();
     LOG_INFO("comfort_store init\n");
     return 0;
 }
 
-void comfort_store_deinit(void) /* 无持久化，空实现 */
+void comfort_store_deinit(void) /* 持久化当前记录 */
 {
+    comfort_store_save_records();
 }
 
 void comfort_store_fill_status_payload(uint8_t *out, uint16_t out_cap, uint16_t *out_len)
@@ -90,7 +357,7 @@ void comfort_store_fill_status_payload(uint8_t *out, uint16_t out_cap, uint16_t 
     out[2] = (uint8_t)g_rt.work_state;
     out[3] = g_rt.bt_linked;
     out[4] = g_rt.owner_voice_exist;
-    out[5] = g_rt.volume;
+    out[5] = audio_get_volume();
     out[6] = (uint8_t)g_rt.calm_mode;
     out[7] = g_rt.enabled_mask;
     out[8] = g_rt.us_mask;
@@ -135,26 +402,126 @@ void comfort_store_set_calm_runtime(ds_calm_mode_t mode, uint8_t enabled_mask, u
     g_rt.us_mask = us_mask;
 }
 
-uint16_t comfort_store_pull_records(/* 0x41 占位：rsp 固定 OK+空记录 */
-                                    const uint8_t *req,
-                                    uint16_t req_len,
-                                    uint8_t *rsp,
-                                    uint16_t rsp_cap)
+/* ========== 记录获取与删除（0x41 / 0x42 串口命令） ========== */
+
+uint16_t comfort_store_pull_records(
+    const uint8_t *req,
+    uint16_t req_len,
+    uint8_t *rsp,
+    uint16_t rsp_cap)
 {
+    /*
+    UART 协议：
+
+    REQ payload: []（可选 payload 被忽略，始终返回最旧记录）
+
+    RSP payload: [status(1), remainingCount(1), entryCount(1), entries...]
+      status          - DS_UART_STATUS_OK 或 DS_UART_STATUS_NOT_FOUND
+      remainingCount  - 取出本条后剩余记录数
+      entryCount      - 本条记录的 entry 数
+      entries         - entryCount 条 entry，每条 [type(1B), ts(4B)] = 5B
+
+    无记录时返回 [DS_UART_STATUS_OK, 0, 0]。
+    */
+    uint8_t remaining;
+    uint16_t pos;
+    uint8_t i;
+
     (void)req;
     (void)req_len;
-    if (!rsp || rsp_cap < 4)
+
+    if (!rsp || rsp_cap < 3)
     {
         return 0;
     }
-    rsp[0] = DS_UART_STATUS_OK;
-    rsp[1] = 0;
-    rsp[2] = 0xFF;
-    rsp[3] = 0;
-    return 4;
+
+    if (g_record_cnt == 0)
+    {
+        rsp[0] = DS_UART_STATUS_OK;
+        rsp[1] = 0;
+        rsp[2] = 0;
+        return 3;
+    }
+
+    /* 取最旧记录（head） */
+    {
+        const ds_session_record_t *rec = &g_records[g_record_head];
+        uint8_t entry_cnt = rec->entry_cnt;
+        uint16_t need = (uint16_t)(3 + entry_cnt * 5);
+
+        if (need > rsp_cap)
+        {
+            rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
+            return 1;
+        }
+
+        remaining = (g_record_cnt > 0) ? (uint8_t)(g_record_cnt - 1) : 0;
+
+        rsp[0] = DS_UART_STATUS_OK;
+        rsp[1] = remaining;
+        rsp[2] = entry_cnt;
+
+        pos = 3;
+        for (i = 0; i < entry_cnt; i++)
+        {
+            rsp[pos] = rec->entries[i].type;
+            rsp[pos + 1] = (uint8_t)(rec->entries[i].ts & 0xFF);
+            rsp[pos + 2] = (uint8_t)((rec->entries[i].ts >> 8) & 0xFF);
+            rsp[pos + 3] = (uint8_t)((rec->entries[i].ts >> 16) & 0xFF);
+            rsp[pos + 4] = (uint8_t)((rec->entries[i].ts >> 24) & 0xFF);
+            pos += 5;
+        }
+
+        LOG_INFO("pull_records: entries=%u remaining=%u\n", entry_cnt, remaining);
+        return pos;
+    }
 }
 
-uint16_t comfort_store_factory_reset(/* 删主人录音并恢复默认策略字段 */
+uint16_t comfort_store_delete_oldest_record(
+    const uint8_t *req,
+    uint16_t req_len,
+    uint8_t *rsp,
+    uint16_t rsp_cap)
+{
+    /*
+    UART 协议：
+
+    REQ payload: []（可选 payload 被忽略）
+    RSP payload: [status(1), remainingCount(1)]
+
+    删除最旧记录后将文件持久化。
+    */
+    (void)req;
+    (void)req_len;
+
+    if (!rsp || rsp_cap < 2)
+    {
+        return 0;
+    }
+
+    if (g_record_cnt == 0)
+    {
+        rsp[0] = DS_UART_STATUS_OK;
+        rsp[1] = 0;
+        return 2;
+    }
+
+    /* 删除最旧记录（弹出 head） */
+    memset(&g_records[g_record_head], 0, sizeof(ds_session_record_t));
+    g_record_head = (g_record_head + 1) % DS_RECORD_MAX;
+    g_record_cnt--;
+
+    /* 持久化 */
+    comfort_store_save_records();
+
+    rsp[0] = DS_UART_STATUS_OK;
+    rsp[1] = g_record_cnt;
+
+    LOG_INFO("delete_oldest: remaining=%u\n", g_record_cnt);
+    return 2;
+}
+
+uint16_t comfort_store_factory_reset(/* 删主人录音、清记录、恢复默认策略 */
                                      const uint8_t *req,
                                      uint16_t req_len,
                                      uint8_t *rsp,
@@ -162,9 +529,17 @@ uint16_t comfort_store_factory_reset(/* 删主人录音并恢复默认策略字�
 {
     (void)req;
     (void)req_len;
+
     audio_delete_owner_rec();
     g_rt.owner_voice_exist = 0;
     g_rt.owner_duration_sec = 0;
+
+    /* 清空安抚记录 */
+    g_record_cnt = 0;
+    g_record_head = 0;
+    memset(g_records, 0, sizeof(g_records));
+    comfort_store_save_records();
+
     calm_strategy_factory_reset();
     comfort_store_apply_strategy();
     g_rt.work_state = DS_WORK_MONITORING;
