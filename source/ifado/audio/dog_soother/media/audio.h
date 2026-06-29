@@ -11,7 +11,7 @@ void audio_deinit(void);
 void audio_refresh_owner_info(uint8_t *exist, uint8_t *duration_sec);
 void audio_delete_owner_rec(void);
 
-/* 从硬件读取当前音量（0~30） */
+/* 返回当前音量 dB 值（-60..30，uint8 编码） */
 uint8_t audio_get_volume(void);
 
 /* VOLUME_SET：解析 payload，写 rsp，返回 rsp 长度 */

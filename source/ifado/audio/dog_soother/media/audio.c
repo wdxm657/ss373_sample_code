@@ -27,7 +27,7 @@
 #include <time.h>
 #include <unistd.h>
 
-static uint8_t g_volume = 30;           /* 0~30，与 VOLUME_SET / AO 同步 */
+static int8_t g_volume = 10;            /* -60..30 dB，默认 +10 dB（与 audio_ao_init 一致） */
 static volatile uint8_t g_recording;    /* 1 时采集线程向 rec 队列投递 */
 static uint8_t g_owner_duration_sec;    /* 最近一次有效录音时长 */
 static FILE *g_rec_fp;              /* 录制中的 WAV，先写 PCM 后回填头 */
@@ -314,17 +314,12 @@ void audio_delete_owner_rec(void) /* 停录并删除 owner.wav */
     g_owner_duration_sec = 0;
 }
 
-uint8_t audio_get_volume(void) /* 优先读硬件，失败回退到缓存 */
+uint8_t audio_get_volume(void) /* 返回当前 dB 值（缓存），uint8 编码 */
 {
-    uint8_t hw_level;
-    if (audio_ao_get_volume_level(&hw_level) == 0)
-    {
-        return hw_level;
-    }
-    return g_volume;
+    return (uint8_t)g_volume;
 }
 
-uint16_t audio_set_volume( /* payload[0]=0~30；rsp: status + 当前音量 */
+uint16_t audio_set_volume( /* payload[0]=dB值(-60..30 以 int8 编码)；rsp: status + 当前dB */
     const uint8_t *payload,
     uint16_t payload_len,
     uint8_t *rsp,
@@ -334,19 +329,17 @@ uint16_t audio_set_volume( /* payload[0]=0~30；rsp: status + 当前音量 */
     {
         return 0;
     }
-    g_volume = payload[0];
-    if (g_volume > 30)
-    {
-        g_volume = 30;
-    }
-    LOG_INFO("set volume %u\n", g_volume);
-    if (audio_ao_set_volume_level(g_volume) != 0)
+    g_volume = (int8_t)payload[0];
+    if (g_volume < -60) g_volume = -60;
+    if (g_volume > 30)  g_volume = 30;
+    LOG_INFO("set volume %d dB\n", g_volume);
+    if (audio_ao_set_gain_db(g_volume) != 0)
     {
         rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
         return 1;
     }
     rsp[0] = DS_UART_STATUS_OK;
-    rsp[1] = g_volume;
+    rsp[1] = (uint8_t)g_volume;
     return 2;
 }
 

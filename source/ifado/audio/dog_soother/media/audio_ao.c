@@ -109,6 +109,60 @@ int audio_ao_set_volume_level(uint8_t level_0_30) /* 钳位到 0~30 */
     return audio_ao_apply_gain_level(level_0_30);
 }
 
+int audio_ao_set_gain_db(int8_t db) /* 直接设置增益 -60..30 dB */
+{
+    if (!g_ao_ready)
+    {
+        return -1;
+    }
+    if (db < -60) db = -60;
+    if (db > 30)  db = 30;
+    MI_S32 ret = MI_AO_SetVolume(g_ao_dev, (MI_S16)db, (MI_S16)db, 0);
+    return (ret == MI_SUCCESS) ? 0 : -1;
+}
+
+/* ========== GPIO 14（音频功放使能） ========== */
+
+#define AUDIO_AO_GPIO_NUM 14
+
+static int audio_ao_gpio14_set(int on)
+{
+    static int g_gpio_exported = 0;
+    char buf[64];
+
+    if (!g_gpio_exported)
+    {
+        int fd = open("/sys/class/gpio/export", O_WRONLY);
+        if (fd >= 0)
+        {
+            write(fd, "14", 2);
+            close(fd);
+            usleep(100000);  /* 等待 sysfs 创建 gpio14 目录 */
+            g_gpio_exported = 1;
+        }
+    }
+
+    snprintf(buf, sizeof(buf), "/sys/class/gpio/gpio14/direction");
+    int fd = open(buf, O_WRONLY);
+    if (fd >= 0)
+    {
+        write(fd, "out", 3);
+        close(fd);
+    }
+
+    snprintf(buf, sizeof(buf), "/sys/class/gpio/gpio14/value");
+    fd = open(buf, O_WRONLY);
+    if (fd < 0)
+    {
+        LOG_ERROR("gpio14 open failed\n");
+        return -1;
+    }
+    write(fd, on ? "1" : "0", 1);
+    close(fd);
+    LOG_INFO("gpio14 set %s\n", on ? "HIGH" : "LOW");
+    return 0;
+}
+
 int audio_ao_get_volume_level(uint8_t *level_0_30) /* 通过 MI_AO_GetVolume 读取硬件当前音量 */
 {
     if (!g_ao_ready || !level_0_30)
@@ -153,6 +207,9 @@ static void *audio_ao_play_thread(void *arg) /* 跳过 WAV 头后循环 MI_AO_Wr
     g_ao_stop_req = 0;
     LOG_INFO("ao play start: %s\n", path);
 
+    /* 播放前拉高 GPIO 14（功放使能） */
+    audio_ao_gpio14_set(1);
+
     while (!g_ao_stop_req)
     {
         ssize_t n = read(fd, chunk, sizeof(chunk));
@@ -170,6 +227,10 @@ static void *audio_ao_play_thread(void *arg) /* 跳过 WAV 头后循环 MI_AO_Wr
 
     close(fd);
     g_ao_playing = 0;
+
+    /* 播放完成或中断后拉低 GPIO 14（功放关闭） */
+    audio_ao_gpio14_set(0);
+
     LOG_INFO("ao play done/stop\n");
     return NULL;
 }

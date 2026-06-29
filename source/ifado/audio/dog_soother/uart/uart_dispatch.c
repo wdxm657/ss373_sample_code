@@ -13,6 +13,8 @@
 #include "comfort_store.h"
 #include "bark_control.h"
 #include "audio.h"
+#include "audio_ao.h"
+#include "app_config.h"
 #include "system_time.h"
 
 static void uart_reply_status(uint8_t seq) /* 0x11：9 字节状态 RSP */
@@ -106,6 +108,27 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
     case DS_CMD_FACTORY_RESET:
         rsp_len = comfort_store_factory_reset(payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
+        return;
+
+    case DS_CMD_CALM_MUSIC_PLAY:
+        LOG_INFO("CALM_MUSIC_PLAY req\n");
+        if (audio_ao_play_wav_file(DS_CALM_MUSIC_PATH) == 0)
+        {
+            rsp[0] = DS_UART_STATUS_OK;
+        }
+        else
+        {
+            LOG_INFO("CALM_MUSIC_PLAY failed to start playback\n");
+            rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
+        }
+        uart_proto_send_rsp(cmd_id, seq, rsp, 1);
+        return;
+
+    case DS_CMD_CALM_MUSIC_PLAY_STOP:
+        LOG_INFO("CALM_MUSIC_PLAY_STOP req\n");
+        audio_ao_stop();
+        rsp[0] = DS_UART_STATUS_OK;
+        uart_proto_send_rsp(cmd_id, seq, rsp, 1);
         return;
 
     case DS_CMD_BT_LINK_NOTIFY:
