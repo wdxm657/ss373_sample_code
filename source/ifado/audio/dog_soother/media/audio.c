@@ -391,9 +391,9 @@ void audio_delete_owner_rec(void) /* 停录并删除录音文件 */
 static uint8_t audio_volume_dbg_to_pct(int8_t db)
 {
     if (db <= -60) return 0;
-    if (db >= 30)  return 100;
-    /* -60dB=0%, 30dB=100% */
-    return (uint8_t)(((int16_t)db + 60) * 100 / 90);
+    if (db >= 4)  return 100;
+    /* -60dB=0%, 4dB=100% */
+    return (uint8_t)(((int16_t)db + 60) * 100 / 64);
 }
 
 uint8_t audio_get_volume(void) /* 返回 0-100 百分比 */
@@ -415,9 +415,9 @@ uint16_t audio_set_volume(/* payload[0]=0-100 百分比；rsp: status + 当前�
     /* 0-100 → dB */
     pct = payload[0];
     if (pct > 100) pct = 100;
-    g_volume = (int8_t)(-60 + ((int16_t)pct * 90 / 100));
+    g_volume = (int8_t)(-60 + ((int16_t)pct * 64 / 100));
     if (g_volume < -60) g_volume = -60;
-    if (g_volume > 30)  g_volume = 30;
+    if (g_volume > 4)  g_volume = 4;
     LOG_INFO("set volume pct=%u -> %d dB\n", pct, g_volume);
     if (audio_ao_set_gain_db(g_volume) != 0)
     {
