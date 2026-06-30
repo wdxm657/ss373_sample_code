@@ -40,7 +40,7 @@
 #define DS_AO_DEV_ID     0
 /* 与 test_yamnet -g 30 对齐；过低（如 -10）易导致 YAMNet 全判 Silence */
 #ifndef DS_AI_GAIN_DB
-#define DS_AI_GAIN_DB    30
+#define DS_AI_GAIN_DB    15
 #endif
 /* APP 音量 0~30：gain = level + DS_AO_VOLUME_BASE_GAIN */
 #define DS_AO_VOLUME_BASE_GAIN (0)

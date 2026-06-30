@@ -27,19 +27,19 @@
 #include <time.h>
 #include <unistd.h>
 
-static int8_t g_volume = -15;            /* -60..30 dB，默认 -15 dB（与 audio_ao_init 一致） */
-static volatile uint8_t g_recording;    /* 1 时采集线程向 rec 队列投递 */
-static uint8_t g_owner_duration_sec;    /* 最近一次有效录音时长 */
-static FILE *g_rec_fp;              /* 录制中的 WAV，先写 PCM 后回填头 */
+static int8_t g_volume = -15;        /* -60..30 dB，默认 -15 dB（与 audio_ao_init 一致） */
+static volatile uint8_t g_recording; /* 1 时采集线程向 rec 队列投递 */
+static uint8_t g_owner_duration_sec; /* 最近一次有效录音时长 */
+static FILE *g_rec_fp;               /* 录制中的 WAV，先写 PCM 后回填头 */
 static uint32_t g_rec_pcm_bytes;
-static time_t g_rec_start_sec;      /* 用于 10s 自动停 */
-static time_t g_owner_tmp_create_sec;   /* tmp 文件创建时间戳；0=无待移动的 tmp 文件 */
+static time_t g_rec_start_sec;        /* 用于 10s 自动停 */
+static time_t g_owner_tmp_create_sec; /* tmp 文件创建时间戳；0=无待移动的 tmp 文件 */
 
 static volatile int g_rec_thread_run;
 static pthread_t g_rec_thread;
 
-static volatile int g_owner_rec_ai_paused;   /* 1=因主人录音暂停了音频识别 */
-static volatile int g_owner_play_ai_paused;  /* 1=因主人播放暂停了音频识别 */
+static volatile int g_owner_rec_ai_paused;  /* 1=因主人录音暂停了音频识别 */
+static volatile int g_owner_play_ai_paused; /* 1=因主人播放暂停了音频识别 */
 
 static int audio_is_recording(void) /* 供 audio_stream rec_active 回调 */
 {
@@ -271,7 +271,7 @@ int audio_init(void) /* AI+AO+采集流+录制线程；失败时回滚已初始�
         audio_ai_deinit();
         return -2;
     }
-    audio_ao_set_volume_level(g_volume);
+    audio_ao_set_gain_db(g_volume);
 
     audio_stream_set_rec_active_fn(audio_is_recording);
     if (audio_stream_start() != 0)
@@ -342,19 +342,21 @@ uint8_t audio_get_volume(void) /* 返回当前 dB 值（缓存），uint8 编码
     return (uint8_t)g_volume;
 }
 
-uint16_t audio_set_volume( /* payload[0]=dB值(-60..30 以 int8 编码)；rsp: status + 当前dB */
-    const uint8_t *payload,
-    uint16_t payload_len,
-    uint8_t *rsp,
-    uint16_t rsp_cap)
+uint16_t audio_set_volume(/* payload[0]=dB值(-60..30 以 int8 编码)；rsp: status + 当前dB */
+                          const uint8_t *payload,
+                          uint16_t payload_len,
+                          uint8_t *rsp,
+                          uint16_t rsp_cap)
 {
     if (!rsp || rsp_cap < 2 || !payload || payload_len < 1)
     {
         return 0;
     }
     g_volume = (int8_t)payload[0];
-    if (g_volume < -60) g_volume = -60;
-    if (g_volume > 30)  g_volume = 30;
+    if (g_volume < -60)
+        g_volume = -60;
+    if (g_volume > 30)
+        g_volume = 30;
     LOG_INFO("set volume %d dB\n", g_volume);
     if (audio_ao_set_gain_db(g_volume) != 0)
     {
@@ -366,12 +368,12 @@ uint16_t audio_set_volume( /* payload[0]=dB值(-60..30 以 int8 编码)；rsp: s
     return 2;
 }
 
-uint16_t audio_handle_uart_cmd( /* 0x20~0x25 主人录音；返回 rsp 长度，0 表示参数错误 */
-    uint8_t cmd_id,
-    const uint8_t *payload,
-    uint16_t payload_len,
-    uint8_t *rsp,
-    uint16_t rsp_cap)
+uint16_t audio_handle_uart_cmd(/* 0x20~0x25 主人录音；返回 rsp 长度，0 表示参数错误 */
+                               uint8_t cmd_id,
+                               const uint8_t *payload,
+                               uint16_t payload_len,
+                               uint8_t *rsp,
+                               uint16_t rsp_cap)
 {
     (void)payload;
     (void)payload_len;
@@ -432,33 +434,33 @@ uint16_t audio_handle_uart_cmd( /* 0x20~0x25 主人录音；返回 rsp 长度，
         return 1;
 
     case DS_CMD_OWNER_REC_PLAY:
-        {
-            /* payload[0]=0 播放已保存音频, =1 播放 tmp 音频；空 payload 等价于 0 */
-            uint8_t play_src = (payload_len >= 1) ? payload[0] : 0;
-            const char *play_path = (play_src == 1) ? DS_OWNER_REC_TMP_PATH : DS_OWNER_PCM_PATH;
+    {
+        /* payload[0]=0 播放已保存音频, =1 播放 tmp 音频；空 payload 等价于 0 */
+        uint8_t play_src = (payload_len >= 1) ? payload[0] : 0;
+        const char *play_path = (play_src == 1) ? DS_OWNER_REC_TMP_PATH : DS_OWNER_PCM_PATH;
 
-            if (access(play_path, F_OK) != 0)
+        if (access(play_path, F_OK) != 0)
+        {
+            rsp[0] = DS_UART_STATUS_NOT_FOUND;
+            return 1;
+        }
+        {
+            ds_work_state_t ws = comfort_store_get_work_state();
+            if (ws != DS_WORK_OFF && ws != DS_WORK_MONITORING)
             {
-                rsp[0] = DS_UART_STATUS_NOT_FOUND;
+                rsp[0] = DS_UART_STATUS_STATE_CONFLICT;
                 return 1;
             }
+            if (ws == DS_WORK_MONITORING)
             {
-                ds_work_state_t ws = comfort_store_get_work_state();
-                if (ws != DS_WORK_OFF && ws != DS_WORK_MONITORING)
-                {
-                    rsp[0] = DS_UART_STATUS_STATE_CONFLICT;
-                    return 1;
-                }
-                if (ws == DS_WORK_MONITORING)
-                {
-                    bark_detect_set_active(0);
-                    g_owner_play_ai_paused = 1;
-                }
+                bark_detect_set_active(0);
+                g_owner_play_ai_paused = 1;
             }
-            LOG_INFO("owner rec play src=%u path=%s\n", play_src, play_path);
-            if (audio_ao_play_wav_file(play_path) != 0)
-            {
-                rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
+        }
+        LOG_INFO("owner rec play src=%u path=%s\n", play_src, play_path);
+        if (audio_ao_play_wav_file(play_path) != 0)
+        {
+            rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
             return 1;
         }
         rsp[0] = DS_UART_STATUS_OK;
@@ -494,7 +496,7 @@ uint16_t audio_handle_uart_cmd( /* 0x20~0x25 主人录音；返回 rsp 长度，
             rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
             return 1;
         }
-        g_owner_tmp_create_sec = 0;  /* 已保存，取消超时清理 */
+        g_owner_tmp_create_sec = 0; /* 已保存，取消超时清理 */
         g_owner_duration_sec = (uint8_t)(g_rec_pcm_bytes / (DS_AUDIO_SAMPLE_RATE * 2));
         if (g_owner_duration_sec > DS_OWNER_REC_MAX_SEC)
         {
@@ -514,5 +516,6 @@ uint16_t audio_handle_uart_cmd( /* 0x20~0x25 主人录音；返回 rsp 长度，
     default:
         rsp[0] = DS_UART_STATUS_PARAM_ERROR;
         return 1;
+    }
     }
 }
