@@ -27,4 +27,8 @@
 #define LOG_DEBUG(fmt, ...)                                     \
     printf(COLOR_CYAN "[DEBUG] [%s:%d]: " fmt COLOR_RESET "\n", \
            __FILENAME__, __LINE__, ##__VA_ARGS__)
+
+#define LOG_WARN(fmt, ...)                                     \
+    printf(COLOR_YELLOW "[WARN] [%s:%d]: " fmt COLOR_RESET "\n", \
+           __FILENAME__, __LINE__, ##__VA_ARGS__)
 #endif

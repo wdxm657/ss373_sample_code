@@ -387,27 +387,38 @@ void audio_delete_owner_rec(void) /* 停录并删除录音文件 */
     g_owner_tmp_create_sec = 0;
 }
 
-uint8_t audio_get_volume(void) /* 返回当前 dB 值（缓存），uint8 编码 */
+/* 将内部 dB 值 (-60..30) 转换为 0-100 百分比 */
+static uint8_t audio_volume_dbg_to_pct(int8_t db)
 {
-    return (uint8_t)g_volume;
+    if (db <= -60) return 0;
+    if (db >= 30)  return 100;
+    /* -60dB=0%, 30dB=100% */
+    return (uint8_t)(((int16_t)db + 60) * 100 / 90);
 }
 
-uint16_t audio_set_volume(/* payload[0]=dB值(-60..30 以 int8 编码)；rsp: status + 当前dB */
+uint8_t audio_get_volume(void) /* 返回 0-100 百分比 */
+{
+    return audio_volume_dbg_to_pct(g_volume);
+}
+
+uint16_t audio_set_volume(/* payload[0]=0-100 百分比；rsp: status + 当前百分比 */
                           const uint8_t *payload,
                           uint16_t payload_len,
                           uint8_t *rsp,
                           uint16_t rsp_cap)
 {
+    uint8_t pct;
     if (!rsp || rsp_cap < 2 || !payload || payload_len < 1)
     {
         return 0;
     }
-    g_volume = (int8_t)payload[0];
-    if (g_volume < -60)
-        g_volume = -60;
-    if (g_volume > 30)
-        g_volume = 30;
-    LOG_INFO("set volume %d dB\n", g_volume);
+    /* 0-100 → dB */
+    pct = payload[0];
+    if (pct > 100) pct = 100;
+    g_volume = (int8_t)(-60 + ((int16_t)pct * 90 / 100));
+    if (g_volume < -60) g_volume = -60;
+    if (g_volume > 30)  g_volume = 30;
+    LOG_INFO("set volume pct=%u -> %d dB\n", pct, g_volume);
     if (audio_ao_set_gain_db(g_volume) != 0)
     {
         rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
@@ -416,7 +427,7 @@ uint16_t audio_set_volume(/* payload[0]=dB值(-60..30 以 int8 编码)；rsp: st
     /* 设置成功，持久化到本地文件 */
     audio_volume_save_to_file();
     rsp[0] = DS_UART_STATUS_OK;
-    rsp[1] = (uint8_t)g_volume;
+    rsp[1] = pct;  /* 返回 0-100 */
     return 2;
 }
 
