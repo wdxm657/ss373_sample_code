@@ -75,6 +75,7 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
     case DS_CMD_OWNER_REC_PLAY_STOP:
     case DS_CMD_OWNER_REC_DELETE:
     case DS_CMD_OWNER_REC_INFO_GET:
+    case DS_CMD_OWNER_REC_SAVE:
         rsp_len = audio_handle_uart_cmd(cmd_id, payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;

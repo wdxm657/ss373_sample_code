@@ -33,6 +33,7 @@ static uint8_t g_owner_duration_sec;    /* 最近一次有效录音时长 */
 static FILE *g_rec_fp;              /* 录制中的 WAV，先写 PCM 后回填头 */
 static uint32_t g_rec_pcm_bytes;
 static time_t g_rec_start_sec;      /* 用于 10s 自动停 */
+static time_t g_owner_tmp_create_sec;   /* tmp 文件创建时间戳；0=无待移动的 tmp 文件 */
 
 static volatile int g_rec_thread_run;
 static pthread_t g_rec_thread;
@@ -120,22 +121,25 @@ static void audio_owner_rec_stop_internal(uint8_t auto_stop) /* 写头、发 0x8
              duration_sec,
              g_rec_pcm_bytes);
 
-    /* 0x84 EVT：evt[0]=阶段(0x01 完成) evt[1]=status evt[2]=时长秒 */
+    /* 录制完成 → 文件在 tmp 目录；记录时间戳用于超时清理 */
     if (duration_sec >= DS_OWNER_REC_MIN_SEC)
     {
+        g_owner_tmp_create_sec = time(NULL);
         uint8_t evt[3] = {0x01, DS_UART_STATUS_OK, duration_sec};
         uart_proto_send_evt(DS_EVT_OWNER_REC, 0, evt, sizeof(evt));
     }
     else if (duration_sec > 0)
     {
+        g_owner_tmp_create_sec = 0;
         uint8_t evt[3] = {0x01, DS_UART_STATUS_PARAM_ERROR, duration_sec};
         uart_proto_send_evt(DS_EVT_OWNER_REC, 0, evt, sizeof(evt));
-        unlink(DS_OWNER_PCM_PATH);
+        unlink(DS_OWNER_REC_TMP_PATH);
         g_owner_duration_sec = 0;
     }
     else
     {
-        unlink(DS_OWNER_PCM_PATH);
+        g_owner_tmp_create_sec = 0;
+        unlink(DS_OWNER_REC_TMP_PATH);
         g_owner_duration_sec = 0;
     }
 }
@@ -193,6 +197,19 @@ static void *audio_rec_thread(void *arg) /* audio_stream_rec_pop → 写盘 / �
             g_owner_play_ai_paused = 0;
             bark_detect_set_active(1);
         }
+
+        /* tmp 录音文件超时清理（10 分钟未保存则删除） */
+        if (g_owner_tmp_create_sec > 0)
+        {
+            time_t now = time(NULL);
+            if ((now - g_owner_tmp_create_sec) >= DS_OWNER_REC_MOVE_TIMEOUT_SEC)
+            {
+                LOG_INFO("owner rec tmp file expired, deleting\n");
+                unlink(DS_OWNER_REC_TMP_PATH);
+                g_owner_tmp_create_sec = 0;
+                g_owner_duration_sec = 0;
+            }
+        }
         usleep(10000);
     }
     LOG_INFO("audio rec thread exit\n");
@@ -241,6 +258,7 @@ int audio_init(void) /* AI+AO+采集流+录制线程；失败时回滚已初始�
     g_owner_duration_sec = 0;
     g_owner_rec_ai_paused = 0;
     g_owner_play_ai_paused = 0;
+    g_owner_tmp_create_sec = 0;
 
     if (audio_ai_init(ai_gain) != 0)
     {
@@ -278,6 +296,9 @@ int audio_init(void) /* AI+AO+采集流+录制线程；失败时回滚已初始�
 void audio_deinit(void) /* 停录、停流、停播、释放 MI */
 {
     audio_owner_rec_stop_internal(1);
+    /* 清理未保存的 tmp 录音文件 */
+    unlink(DS_OWNER_REC_TMP_PATH);
+    g_owner_tmp_create_sec = 0;
     /* 必须先停流并关闭队列，否则 rec/detect 线程阻塞在 pop 上无法 join */
     audio_stream_stop();
     audio_rec_thread_stop();
@@ -307,11 +328,12 @@ void audio_refresh_owner_info(uint8_t *exist, uint8_t *duration_sec) /* 供 STAT
     }
 }
 
-void audio_delete_owner_rec(void) /* 停录并删除 owner.wav */
+void audio_delete_owner_rec(void) /* 停录并删除 tmp 下的录音文件 */
 {
     audio_owner_rec_stop_internal(0);
-    unlink(DS_OWNER_PCM_PATH);
+    unlink(DS_OWNER_REC_TMP_PATH);
     g_owner_duration_sec = 0;
+    g_owner_tmp_create_sec = 0;
 }
 
 uint8_t audio_get_volume(void) /* 返回当前 dB 值（缓存），uint8 编码 */
@@ -383,8 +405,9 @@ uint16_t audio_handle_uart_cmd( /* 0x20~0x25 主人录音；返回 rsp 长度，
                 g_owner_rec_ai_paused = 1;
             }
         }
-        ST_Common_CheckMkdirOutFile((char *)DS_OWNER_PCM_PATH);
-        g_rec_fp = fopen(DS_OWNER_PCM_PATH, "wb");
+        /* 录制到 tmp 目录，待 OWNER_REC_SAVE 时移到播放目录 */
+        ST_Common_CheckMkdirOutFile((char *)DS_OWNER_REC_TMP_PATH);
+        g_rec_fp = fopen(DS_OWNER_REC_TMP_PATH, "wb");
         if (!g_rec_fp)
         {
             rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
@@ -398,7 +421,7 @@ uint16_t audio_handle_uart_cmd( /* 0x20~0x25 主人录音；返回 rsp 长度，
         g_rec_pcm_bytes = 0;
         g_rec_start_sec = time(NULL);
         g_recording = 1;
-        LOG_INFO("owner rec start -> %s\n", DS_OWNER_PCM_PATH);
+        LOG_INFO("owner rec start -> %s (tmp)\n", DS_OWNER_REC_TMP_PATH);
         rsp[0] = DS_UART_STATUS_OK;
         return 1;
 
@@ -448,6 +471,32 @@ uint16_t audio_handle_uart_cmd( /* 0x20~0x25 主人录音；返回 rsp 长度，
         audio_delete_owner_rec();
         rsp[0] = DS_UART_STATUS_OK;
         return 1;
+
+    case DS_CMD_OWNER_REC_SAVE:
+        /* 将 tmp/owner.wav 移到播放目录；若不存在则返回 NOT_FOUND */
+        if (access(DS_OWNER_REC_TMP_PATH, F_OK) != 0)
+        {
+            rsp[0] = DS_UART_STATUS_NOT_FOUND;
+            return 1;
+        }
+        /* 确保播放目录存在 */
+        ST_Common_CheckMkdirOutFile((char *)DS_OWNER_PCM_PATH);
+        if (rename(DS_OWNER_REC_TMP_PATH, DS_OWNER_PCM_PATH) != 0)
+        {
+            LOG_ERROR("rename %s -> %s failed\n", DS_OWNER_REC_TMP_PATH, DS_OWNER_PCM_PATH);
+            rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
+            return 1;
+        }
+        g_owner_tmp_create_sec = 0;  /* 已保存，取消超时清理 */
+        g_owner_duration_sec = (uint8_t)(g_rec_pcm_bytes / (DS_AUDIO_SAMPLE_RATE * 2));
+        if (g_owner_duration_sec > DS_OWNER_REC_MAX_SEC)
+        {
+            g_owner_duration_sec = DS_OWNER_REC_MAX_SEC;
+        }
+        LOG_INFO("owner rec saved -> %s duration=%u\n", DS_OWNER_PCM_PATH, g_owner_duration_sec);
+        rsp[0] = DS_UART_STATUS_OK;
+        rsp[1] = g_owner_duration_sec;
+        return 2;
 
     case DS_CMD_OWNER_REC_INFO_GET:
         rsp[0] = DS_UART_STATUS_OK;
