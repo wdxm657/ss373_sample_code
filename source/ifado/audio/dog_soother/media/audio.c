@@ -27,7 +27,7 @@
 #include <time.h>
 #include <unistd.h>
 
-static int8_t g_volume = 10;            /* -60..30 dB，默认 +10 dB（与 audio_ao_init 一致） */
+static int8_t g_volume = -15;            /* -60..30 dB，默认 -15 dB（与 audio_ao_init 一致） */
 static volatile uint8_t g_recording;    /* 1 时采集线程向 rec 队列投递 */
 static uint8_t g_owner_duration_sec;    /* 最近一次有效录音时长 */
 static FILE *g_rec_fp;              /* 录制中的 WAV，先写 PCM 后回填头 */
@@ -328,10 +328,11 @@ void audio_refresh_owner_info(uint8_t *exist, uint8_t *duration_sec) /* 供 STAT
     }
 }
 
-void audio_delete_owner_rec(void) /* 停录并删除 tmp 下的录音文件 */
+void audio_delete_owner_rec(void) /* 停录并删除录音文件 */
 {
     audio_owner_rec_stop_internal(0);
     unlink(DS_OWNER_REC_TMP_PATH);
+    unlink(DS_OWNER_PCM_PATH);
     g_owner_duration_sec = 0;
     g_owner_tmp_create_sec = 0;
 }
@@ -431,27 +432,33 @@ uint16_t audio_handle_uart_cmd( /* 0x20~0x25 主人录音；返回 rsp 长度，
         return 1;
 
     case DS_CMD_OWNER_REC_PLAY:
-        if (!owner_file_exists())
         {
-            rsp[0] = DS_UART_STATUS_NOT_FOUND;
-            return 1;
-        }
-        {
-            ds_work_state_t ws = comfort_store_get_work_state();
-            if (ws != DS_WORK_OFF && ws != DS_WORK_MONITORING)
+            /* payload[0]=0 播放已保存音频, =1 播放 tmp 音频；空 payload 等价于 0 */
+            uint8_t play_src = (payload_len >= 1) ? payload[0] : 0;
+            const char *play_path = (play_src == 1) ? DS_OWNER_REC_TMP_PATH : DS_OWNER_PCM_PATH;
+
+            if (access(play_path, F_OK) != 0)
             {
-                rsp[0] = DS_UART_STATUS_STATE_CONFLICT;
+                rsp[0] = DS_UART_STATUS_NOT_FOUND;
                 return 1;
             }
-            if (ws == DS_WORK_MONITORING)
             {
-                bark_detect_set_active(0);
-                g_owner_play_ai_paused = 1;
+                ds_work_state_t ws = comfort_store_get_work_state();
+                if (ws != DS_WORK_OFF && ws != DS_WORK_MONITORING)
+                {
+                    rsp[0] = DS_UART_STATUS_STATE_CONFLICT;
+                    return 1;
+                }
+                if (ws == DS_WORK_MONITORING)
+                {
+                    bark_detect_set_active(0);
+                    g_owner_play_ai_paused = 1;
+                }
             }
-        }
-        if (audio_ao_play_wav_file(DS_OWNER_PCM_PATH) != 0)
-        {
-            rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
+            LOG_INFO("owner rec play src=%u path=%s\n", play_src, play_path);
+            if (audio_ao_play_wav_file(play_path) != 0)
+            {
+                rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
             return 1;
         }
         rsp[0] = DS_UART_STATUS_OK;

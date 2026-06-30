@@ -56,7 +56,6 @@ typedef struct
     uint8_t enabled_mask;       /* out[7] DS_ENABLED_* */
     uint8_t us_mask;            /* out[8] */
 } ds_runtime_t;
-ds_work_state_t last_work_state;
 
 void comfort_store_apply_strategy(void)
 {
@@ -366,7 +365,12 @@ void comfort_store_fill_status_payload(uint8_t *out, uint16_t out_cap, uint16_t 
 
 void comfort_store_set_power(uint8_t on) /* POWER_CTRL 写入 */
 {
+    uint8_t old = g_rt.power_on;
     g_rt.power_on = on ? 1 : 0;
+    if (old != g_rt.power_on)
+    {
+        LOG_INFO("state_change: power_on %u -> %u\n", old, g_rt.power_on);
+    }
 }
 
 uint8_t comfort_store_get_power(void)
@@ -376,30 +380,56 @@ uint8_t comfort_store_get_power(void)
 
 void comfort_store_set_bt_linked(uint8_t linked) /* BT_LINK_NOTIFY */
 {
+    uint8_t old = g_rt.bt_linked;
     g_rt.bt_linked = linked ? 1 : 0;
+    if (old != g_rt.bt_linked)
+    {
+        LOG_INFO("state_change: bt_linked %u -> %u\n", old, g_rt.bt_linked);
+    }
 }
 
 ds_work_state_t comfort_store_get_work_state(void)
 {
-    if (g_rt.work_state != last_work_state)
-    {
-        LOG_DEBUG("work_state changed from %d to %d\n", last_work_state, g_rt.work_state);
-        last_work_state = g_rt.work_state;
-    }
-
     return g_rt.work_state;
 }
 
 void comfort_store_set_work_state(ds_work_state_t state) /* bark_control 状态机更新 */
 {
+    ds_work_state_t old = g_rt.work_state;
     g_rt.work_state = state;
+    if (old != g_rt.work_state)
+    {
+        LOG_INFO("state_change: work_state %u -> %u\n", (uint8_t)old, (uint8_t)g_rt.work_state);
+    }
 }
 
 void comfort_store_set_calm_runtime(ds_calm_mode_t mode, uint8_t enabled_mask, uint8_t us_mask)
 {
-    g_rt.calm_mode = mode;
-    g_rt.enabled_mask = enabled_mask;
-    g_rt.us_mask = us_mask;
+    uint8_t changed = 0;
+
+    if (g_rt.calm_mode != mode)
+    {
+        LOG_INFO("state_change: calm_mode %u -> %u\n", (uint8_t)g_rt.calm_mode, (uint8_t)mode);
+        g_rt.calm_mode = mode;
+        changed = 1;
+    }
+    if (g_rt.enabled_mask != enabled_mask)
+    {
+        LOG_INFO("state_change: enabled_mask 0x%02x -> 0x%02x\n", g_rt.enabled_mask, enabled_mask);
+        g_rt.enabled_mask = enabled_mask;
+        changed = 1;
+    }
+    if (g_rt.us_mask != us_mask)
+    {
+        LOG_INFO("state_change: us_mask 0x%02x -> 0x%02x\n", g_rt.us_mask, us_mask);
+        g_rt.us_mask = us_mask;
+        changed = 1;
+    }
+    if (!changed)
+    {
+        LOG_DEBUG("set_calm_runtime: no change (mode=%u enabled=0x%02x us=0x%02x)\n",
+                  (uint8_t)mode, enabled_mask, us_mask);
+    }
 }
 
 /* ========== 记录获取与删除（0x41 / 0x42 串口命令） ========== */
@@ -531,6 +561,7 @@ uint16_t comfort_store_factory_reset(/* 删主人录音、清记录、恢复默�
     (void)req_len;
 
     audio_delete_owner_rec();
+    LOG_INFO("state_change: owner_voice_exist %u -> 0 (factory_reset)\n", g_rt.owner_voice_exist);
     g_rt.owner_voice_exist = 0;
     g_rt.owner_duration_sec = 0;
 
