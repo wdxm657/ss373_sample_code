@@ -17,6 +17,7 @@
 #define DS_CALM_MUSIC_PATH  DS_USERDATA_DIR "/music/calm.wav"
 #define DS_STRATEGY_PATH    DS_USERDATA_DIR "/params/calm_strategy.bin"
 #define DS_COMFORT_DB_PATH  DS_USERDATA_DIR "/params/comfort_records.bin"
+#define DS_VOLUME_PATH      DS_USERDATA_DIR "/params/volume.bin"
 
 /* YAMNet 模型路径前缀（不含 .param/.bin） */
 #ifndef DS_YAMNET_MODEL_PREFIX

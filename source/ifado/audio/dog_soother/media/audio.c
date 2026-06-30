@@ -41,6 +41,50 @@ static pthread_t g_rec_thread;
 static volatile int g_owner_rec_ai_paused;  /* 1=因主人录音暂停了音频识别 */
 static volatile int g_owner_play_ai_paused; /* 1=因主人播放暂停了音频识别 */
 
+/* ========== 音量持久化 ========== */
+
+static int audio_volume_load_from_file(void)
+{
+    FILE *fp = fopen(DS_VOLUME_PATH, "rb");
+    int8_t val;
+    if (!fp)
+    {
+        return -1;
+    }
+    if (fread(&val, sizeof(val), 1, fp) != 1)
+    {
+        fclose(fp);
+        return -2;
+    }
+    fclose(fp);
+    if (val < -60 || val > 30)
+    {
+        LOG_WARN("volume file value %d out of range, ignore\n", val);
+        return -3;
+    }
+    g_volume = val;
+    LOG_INFO("volume loaded from file: %d dB\n", g_volume);
+    return 0;
+}
+
+static int audio_volume_save_to_file(void)
+{
+    FILE *fp = fopen(DS_VOLUME_PATH, "wb");
+    if (!fp)
+    {
+        LOG_ERROR("volume save open failed: %s\n", DS_VOLUME_PATH);
+        return -1;
+    }
+    if (fwrite(&g_volume, sizeof(g_volume), 1, fp) != 1)
+    {
+        fclose(fp);
+        return -2;
+    }
+    fclose(fp);
+    LOG_INFO("volume saved to file: %d dB\n", g_volume);
+    return 0;
+}
+
 static int audio_is_recording(void) /* 供 audio_stream rec_active 回调 */
 {
     return g_recording ? 1 : 0;
@@ -260,6 +304,12 @@ int audio_init(void) /* AI+AO+采集流+录制线程；失败时回滚已初始�
     g_owner_play_ai_paused = 0;
     g_owner_tmp_create_sec = 0;
 
+    /* 从本地文件加载音量；文件不存在或无效则使用编译期默认值 */
+    if (audio_volume_load_from_file() != 0)
+    {
+        LOG_INFO("volume use default: %d dB\n", g_volume);
+    }
+
     if (audio_ai_init(ai_gain) != 0)
     {
         LOG_ERROR("audio_ai_init failed\n");
@@ -363,6 +413,8 @@ uint16_t audio_set_volume(/* payload[0]=dB值(-60..30 以 int8 编码)；rsp: st
         rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
         return 1;
     }
+    /* 设置成功，持久化到本地文件 */
+    audio_volume_save_to_file();
     rsp[0] = DS_UART_STATUS_OK;
     rsp[1] = (uint8_t)g_volume;
     return 2;
