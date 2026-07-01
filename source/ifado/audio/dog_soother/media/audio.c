@@ -571,10 +571,32 @@ uint16_t audio_handle_uart_cmd(/* 0x20~0x25 主人录音；返回 rsp 长度，0
         return 2;
 
     case DS_CMD_OWNER_REC_INFO_GET:
-        rsp[0] = DS_UART_STATUS_OK;
-        rsp[1] = owner_file_exists() ? 1 : 0;
-        rsp[2] = g_owner_duration_sec;
-        return 3;
+        {
+            uint8_t exist = owner_file_exists() ? 1 : 0;
+            uint8_t duration = 0;
+            if (exist)
+            {
+                /* 从 WAV 文件大小算实际时长：16kHz mono 16bit → 每秒 32000 字节 */
+                FILE *fp = fopen(DS_OWNER_PCM_PATH, "rb");
+                if (fp)
+                {
+                    fseek(fp, 0, SEEK_END);
+                    long file_size = ftell(fp);
+                    fclose(fp);
+                    if (file_size > 44)
+                    {
+                        long pcm_bytes = file_size - 44;
+                        duration = (uint8_t)(pcm_bytes / (DS_AUDIO_SAMPLE_RATE * 2));
+                        if (duration > DS_OWNER_REC_MAX_SEC)
+                            duration = DS_OWNER_REC_MAX_SEC;
+                    }
+                }
+            }
+            rsp[0] = DS_UART_STATUS_OK;
+            rsp[1] = exist;
+            rsp[2] = duration;
+            return 3;
+        }
 
     default:
         rsp[0] = DS_UART_STATUS_PARAM_ERROR;

@@ -50,7 +50,7 @@
 
 /* 主人录音：最短/最长秒数；安抚后休息秒数；监测周期范围 */
 #define DS_OWNER_REC_MIN_SEC 3
-#define DS_OWNER_REC_MAX_SEC 10
+#define DS_OWNER_REC_MAX_SEC 11
 #define DS_CALM_REST_SEC     60
 
 /* 监听：首次狗叫起 10s 内累计 3 次进入安抚执行 */
