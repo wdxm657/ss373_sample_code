@@ -452,7 +452,13 @@ uint16_t comfort_store_pull_records(
       entries         - entryCount 条 entry，每条 [type(1B), ts(4B)] = 5B
 
     无记录时返回 [DS_UART_STATUS_OK, 0, 0]。
+
+    注意：直接从文件读取，不依赖内存缓存。
     */
+    FILE *fp;
+    ds_record_file_hdr_t hdr;
+    ds_record_file_entry_hdr_t fhdr;
+    uint8_t entry_cnt;
     uint8_t remaining;
     uint16_t pos;
     uint8_t i;
@@ -465,27 +471,48 @@ uint16_t comfort_store_pull_records(
         return 0;
     }
 
-    if (g_record_cnt == 0)
+    /* 从文件读取第一条记录 */
+    fp = fopen(DS_COMFORT_DB_PATH, "rb");
+    if (!fp)
     {
+        /* 文件不存在或无记录 */
         rsp[0] = DS_UART_STATUS_OK;
         rsp[1] = 0;
         rsp[2] = 0;
         return 3;
     }
 
-    /* 取最旧记录（head） */
+    if (fread(&hdr, sizeof(hdr), 1, fp) != 1 ||
+        hdr.magic != DS_RECORD_FILE_MAGIC ||
+        hdr.version != DS_RECORD_FILE_VER ||
+        hdr.count == 0)
     {
-        const ds_session_record_t *rec = &g_records[g_record_head];
-        uint8_t entry_cnt = rec->entry_cnt;
-        uint16_t need = (uint16_t)(3 + entry_cnt * 5);
+        fclose(fp);
+        rsp[0] = DS_UART_STATUS_OK;
+        rsp[1] = 0;
+        rsp[2] = 0;
+        return 3;
+    }
 
-        if (need > rsp_cap)
+    /* 读取第一条记录头 */
+    if (fread(&fhdr, sizeof(fhdr), 1, fp) != 1)
+    {
+        fclose(fp);
+        rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
+        return 1;
+    }
+
+    entry_cnt = (fhdr.entry_cnt <= DS_RECORD_ENTRY_MAX) ? fhdr.entry_cnt : 0;
+    {
+        uint16_t need = (uint16_t)(3 + entry_cnt * 5);
+        if (need > rsp_cap || entry_cnt == 0)
         {
+            fclose(fp);
             rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
             return 1;
         }
 
-        remaining = (g_record_cnt > 0) ? (uint8_t)(g_record_cnt - 1) : 0;
+        remaining = (hdr.count > 1) ? (uint8_t)(hdr.count - 1) : 0;
 
         rsp[0] = DS_UART_STATUS_OK;
         rsp[1] = remaining;
@@ -494,17 +521,23 @@ uint16_t comfort_store_pull_records(
         pos = 3;
         for (i = 0; i < entry_cnt; i++)
         {
-            rsp[pos] = rec->entries[i].type;
-            rsp[pos + 1] = (uint8_t)(rec->entries[i].ts & 0xFF);
-            rsp[pos + 2] = (uint8_t)((rec->entries[i].ts >> 8) & 0xFF);
-            rsp[pos + 3] = (uint8_t)((rec->entries[i].ts >> 16) & 0xFF);
-            rsp[pos + 4] = (uint8_t)((rec->entries[i].ts >> 24) & 0xFF);
+            ds_record_entry_t entry;
+            if (fread(&entry, sizeof(entry), 1, fp) != 1)
+            {
+                break;
+            }
+            rsp[pos] = entry.type;
+            rsp[pos + 1] = (uint8_t)(entry.ts & 0xFF);
+            rsp[pos + 2] = (uint8_t)((entry.ts >> 8) & 0xFF);
+            rsp[pos + 3] = (uint8_t)((entry.ts >> 16) & 0xFF);
+            rsp[pos + 4] = (uint8_t)((entry.ts >> 24) & 0xFF);
             pos += 5;
         }
-
-        LOG_INFO("pull_records: entries=%u remaining=%u\n", entry_cnt, remaining);
-        return pos;
     }
+
+    fclose(fp);
+    LOG_INFO("pull_records from file: entries=%u remaining=%u\n", entry_cnt, remaining);
+    return pos;
 }
 
 uint16_t comfort_store_delete_oldest_record(
@@ -519,8 +552,13 @@ uint16_t comfort_store_delete_oldest_record(
     REQ payload: []（可选 payload 被忽略）
     RSP payload: [status(1), remainingCount(1)]
 
-    删除最旧记录后将文件持久化。
+    直接从文件读取所有记录，跳过第一条，写回文件。
     */
+    FILE    *fp;
+    uint8_t  record_buf[4096]; /* 足够容纳 DS_RECORD_MAX 条记录 */
+    uint16_t file_len;
+    uint16_t remain_len;
+
     (void)req;
     (void)req_len;
 
@@ -529,26 +567,85 @@ uint16_t comfort_store_delete_oldest_record(
         return 0;
     }
 
-    if (g_record_cnt == 0)
+    /* 读取整个文件 */
+    fp = fopen(DS_COMFORT_DB_PATH, "rb");
+    if (!fp)
+    {
+        rsp[0] = DS_UART_STATUS_OK;
+        rsp[1] = 0;
+        return 2;
+    }
+    file_len = (uint16_t)fread(record_buf, 1, sizeof(record_buf), fp);
+    fclose(fp);
+
+    if (file_len < sizeof(ds_record_file_hdr_t))
     {
         rsp[0] = DS_UART_STATUS_OK;
         rsp[1] = 0;
         return 2;
     }
 
-    /* 删除最旧记录（弹出 head） */
-    memset(&g_records[g_record_head], 0, sizeof(ds_session_record_t));
-    g_record_head = (g_record_head + 1) % DS_RECORD_MAX;
-    g_record_cnt--;
+    /* 解析文件头 */
+    {
+        ds_record_file_hdr_t *hdr = (ds_record_file_hdr_t *)record_buf;
+        if (hdr->magic != DS_RECORD_FILE_MAGIC || hdr->version != DS_RECORD_FILE_VER || hdr->count == 0)
+        {
+            rsp[0] = DS_UART_STATUS_OK;
+            rsp[1] = 0;
+            return 2;
+        }
 
-    /* 持久化 */
-    comfort_store_save_records();
+        /* 跳过第一条记录：从 hdr 之后扫描 entries */
+        uint16_t off = sizeof(ds_record_file_hdr_t);
+        uint8_t  i;
 
-    rsp[0] = DS_UART_STATUS_OK;
-    rsp[1] = g_record_cnt;
+        if (off + sizeof(ds_record_file_entry_hdr_t) > file_len)
+        {
+            rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
+            return 1;
+        }
 
-    LOG_INFO("delete_oldest: remaining=%u\n", g_record_cnt);
-    return 2;
+        {
+            ds_record_file_entry_hdr_t *e = (ds_record_file_entry_hdr_t *)&record_buf[off];
+            uint8_t entry_cnt = (e->entry_cnt <= DS_RECORD_ENTRY_MAX) ? e->entry_cnt : 0;
+            uint16_t rec_size = (uint16_t)(sizeof(ds_record_file_entry_hdr_t) + entry_cnt * sizeof(ds_record_entry_t));
+            off += rec_size;
+        }
+
+        /* 剩余数据量 = 后续记录内容 */
+        remain_len = (off < file_len) ? (uint16_t)(file_len - off) : 0;
+        hdr->count--;
+
+        /* 写回文件：剩余记录 + 更新后的文件头 */
+        fp = fopen(DS_COMFORT_DB_PATH, "wb");
+        if (!fp)
+        {
+            rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
+            return 1;
+        }
+        fwrite(hdr, sizeof(ds_record_file_hdr_t), 1, fp);
+        if (remain_len > 0)
+        {
+            fwrite(&record_buf[off], 1, remain_len, fp);
+        }
+        fclose(fp);
+
+        /* 同步更新内存缓存中的记录计数 */
+        if (g_record_cnt > 0)
+        {
+            g_record_cnt--;
+            if (g_record_cnt == 0)
+            {
+                g_record_head = 0;
+                memset(g_records, 0, sizeof(g_records));
+            }
+        }
+
+        rsp[0] = DS_UART_STATUS_OK;
+        rsp[1] = hdr->count;
+        LOG_INFO("delete_oldest from file: remaining=%u\n", hdr->count);
+        return 2;
+    }
 }
 
 uint16_t comfort_store_factory_reset(/* 删主人录音、清记录、恢复默认策略 */

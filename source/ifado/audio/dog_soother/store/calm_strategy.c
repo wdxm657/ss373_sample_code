@@ -187,8 +187,10 @@ int calm_strategy_load(ds_calm_mode_t mode)
     g_st.mode = mode;
     g_st.enabled_mask = f.enabled_mask;
     g_st.measure_cnt = f.measure_cnt;
+    LOG_INFO("measure_cnt %d\n", f.measure_cnt);
     memcpy(g_st.measure_order, f.measure_order, sizeof(g_st.measure_order));
     g_st.us_cnt = f.us_cnt;
+    LOG_INFO("us_cnt %d\n", f.us_cnt);
     memcpy(g_st.us_order, f.us_order, sizeof(g_st.us_order));
     LOG_INFO("strategy loaded from %s\n", path);
     LOG_INFO("measure_order: %d, %d, %d\n", g_st.measure_order[0], g_st.measure_order[1], g_st.measure_order[2]);
@@ -315,9 +317,11 @@ int calm_strategy_set_from_uart_payload(const uint8_t *payload, uint16_t len)
     g_st.mode = (ds_calm_mode_t)payload[0];
     g_st.enabled_mask = payload[1];
     g_st.measure_cnt = m_cnt;
+    memset(g_st.measure_order, 0, 3);
     memcpy(g_st.measure_order, payload + idx, m_cnt);
     idx = (uint16_t)(idx + m_cnt + 1);
     g_st.us_cnt = u_cnt;
+    memset(g_st.us_order, 0, 3);
     memcpy(g_st.us_order, payload + idx, u_cnt);
     LOG_INFO("strategy set ok: mode=%d enabledMask=0x%02x "
              "measureOrder=[%d,%d,%d] usOrder=[%d,%d,%d]\n",
