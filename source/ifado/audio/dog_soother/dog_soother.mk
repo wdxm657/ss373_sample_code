@@ -10,6 +10,7 @@ INC += $(BUILD_TOP)/$(MODULE_PATH)/media
 INC += $(BUILD_TOP)/$(MODULE_PATH)/store
 INC += $(BUILD_TOP)/$(MODULE_PATH)/sys
 INC += $(BUILD_TOP)/$(MODULE_PATH)/yamnet
+INC += $(BUILD_TOP)/$(MODULE_PATH)/led
 INC += $(BUILD_TOP)/third_part/ncnn/build-star373/install/include
 INC += $(BUILD_TOP)/third_part/ncnn/build-star373/install/include/ncnn
 INC += $(BUILD_TOP)/third_part/fftw-3.3.10/build_star373/include
@@ -33,5 +34,6 @@ SUBDIRS += $(MODULE_PATH)/media
 SUBDIRS += $(MODULE_PATH)/store
 SUBDIRS += $(MODULE_PATH)/sys
 SUBDIRS += $(MODULE_PATH)/yamnet
+SUBDIRS += $(MODULE_PATH)/led
 
 EXEFILE := dog_soother

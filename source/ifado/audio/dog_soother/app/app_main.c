@@ -14,6 +14,7 @@
 #include "bark_control.h"
 #include "audio.h"
 #include "ultrasonic.h"
+#include "led.h"
 
 #include <signal.h>
 #include <stdio.h>
@@ -72,7 +73,7 @@ int app_main_run(int argc, char **argv)
     LOG_INFO("dog_soother start, uart=%s baud=%u\n", uart_dev, DS_UART_BAUDRATE);
 
     /* 顺序：状态存储 → 音频(含采集/录) → 超声占位 → 识别线程；UART 在音频就绪后 */
-    if (comfort_store_init() != 0 || audio_init() != 0 || ultrasonic_init() != 0 || bark_control_init() != 0)
+    if (led_init() != 0 || comfort_store_init() != 0 || audio_init() != 0 || ultrasonic_init() != 0 || bark_control_init() != 0)
     {
         LOG_ERROR("module init failed\n");
         return 1;
@@ -98,19 +99,34 @@ int app_main_run(int argc, char **argv)
         return 1;
     }
 
+    /* 设置初始 LED 灯色 */
+    led_indicate_state(comfort_store_get_power(), comfort_store_get_bt_linked());
+
     bark_control_post_work_state(0);
 
     LOG_INFO("main idle (capture/rec/detect threads running), Ctrl+C to exit\n");
-    while (g_running)
     {
-        bark_control_tick();
-        sleep(1);
+        uint8_t last_power = 0xFF, last_bt = 0xFF;
+        while (g_running)
+        {
+            bark_control_tick();
+            uint8_t p = comfort_store_get_power();
+            uint8_t b = comfort_store_get_bt_linked();
+            if (p != last_power || b != last_bt)
+            {
+                last_power = p;
+                last_bt    = b;
+                led_indicate_state(p, b);
+            }
+            sleep(1);
+        }
     }
 
     /* 先停 UART；再停音频流（关闭 detect/rec 队列）；最后停识别线程 */
     uart_dispatch_deinit();
     uart_proto_deinit();
     ultrasonic_deinit();
+    led_deinit();
     audio_deinit();
     bark_control_deinit();
     comfort_store_deinit();

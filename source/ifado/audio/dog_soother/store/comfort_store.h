@@ -53,6 +53,7 @@ void comfort_store_fill_status_payload(uint8_t *out, uint16_t out_cap, uint16_t 
 
 void comfort_store_set_power(uint8_t on);
 uint8_t comfort_store_get_power(void);
+uint8_t comfort_store_get_bt_linked(void);
 
 void comfort_store_set_bt_linked(uint8_t linked);
 
