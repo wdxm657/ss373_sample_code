@@ -342,7 +342,9 @@ uint16_t calm_strategy_fill_get_rsp(ds_calm_mode_t mode, uint8_t *rsp, uint16_t 
     LOG_INFO("strategy get: loading mode=%d\n", mode);
     calm_strategy_load(mode);
 
-    n = (uint16_t)(4 + g_st.measure_cnt + g_st.us_cnt);
+    /* 总长度 = status(1) + mode(1) + enabledMask(1) + measureCnt(1)
+                 + measureOrder(measure_cnt) + usCnt(1) + usOrder(us_cnt) */
+    n = (uint16_t)(5 + g_st.measure_cnt + g_st.us_cnt);
     if (!rsp || rsp_cap < n)
     {
         LOG_ERROR("strategy get: rsp_cap=%u < n=%u\n", rsp_cap, n);

@@ -37,8 +37,6 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
     uint8_t rsp[DS_UART_MAX_PAYLOAD];
     uint16_t rsp_len = 0;
 
-    LOG_INFO("REQ cmd=0x%02x seq=%u len=%u\n", cmd_id, seq, payload_len);
-
     switch (cmd_id)
     {
     case DS_CMD_STATUS_GET:
@@ -70,43 +68,78 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
         return;
 
     case DS_CMD_OWNER_REC_START:
+        LOG_INFO("OWNER_REC_START req\n");
+        rsp_len = audio_handle_uart_cmd(cmd_id, payload, payload_len, rsp, sizeof(rsp));
+        uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
+        return;
     case DS_CMD_OWNER_REC_STOP:
+        LOG_INFO("OWNER_REC_STOP req\n");
+        rsp_len = audio_handle_uart_cmd(cmd_id, payload, payload_len, rsp, sizeof(rsp));
+        uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
+        return;
     case DS_CMD_OWNER_REC_PLAY:
+        LOG_INFO("OWNER_REC_PLAY req src=%u\n", payload_len >= 1 ? payload[0] : 0xFF);
+        rsp_len = audio_handle_uart_cmd(cmd_id, payload, payload_len, rsp, sizeof(rsp));
+        uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
+        return;
     case DS_CMD_OWNER_REC_PLAY_STOP:
+        LOG_INFO("OWNER_REC_PLAY_STOP req\n");
+        rsp_len = audio_handle_uart_cmd(cmd_id, payload, payload_len, rsp, sizeof(rsp));
+        uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
+        return;
     case DS_CMD_OWNER_REC_DELETE:
+        LOG_INFO("OWNER_REC_DELETE req\n");
+        rsp_len = audio_handle_uart_cmd(cmd_id, payload, payload_len, rsp, sizeof(rsp));
+        uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
+        return;
     case DS_CMD_OWNER_REC_INFO_GET:
+        LOG_INFO("OWNER_REC_INFO_GET req\n");
+        rsp_len = audio_handle_uart_cmd(cmd_id, payload, payload_len, rsp, sizeof(rsp));
+        uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
+        return;
     case DS_CMD_OWNER_REC_SAVE:
+        LOG_INFO("OWNER_REC_SAVE req\n");
         rsp_len = audio_handle_uart_cmd(cmd_id, payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;
 
     case DS_CMD_CALM_MODE_SET:
+        LOG_INFO("CALM_MODE_SET req mode=%u\n", payload_len >= 1 ? payload[0] : 0xFF);
         rsp_len = bark_control_set_mode(payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;
 
     case DS_CMD_CALM_STRATEGY_SET:
+        LOG_INFO("CALM_STRATEGY_SET req len=%u\n", payload_len);
+        rsp_len = bark_control_handle_strategy_cmd(cmd_id, payload, payload_len, rsp, sizeof(rsp));
+        uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
+        return;
     case DS_CMD_CALM_STRATEGY_GET:
+        LOG_INFO("CALM_STRATEGY_GET req mode=%u\n", payload_len >= 1 ? payload[0] : 0xFF);
         rsp_len = bark_control_handle_strategy_cmd(cmd_id, payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;
 
     case DS_CMD_TIME_SET:
+        LOG_INFO("TIME_SET req\n");
         rsp_len = system_time_apply(payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;
 
     case DS_CMD_CALM_RECORD_GET:
+        LOG_INFO("CALM_RECORD_GET req\n");
         rsp_len = comfort_store_pull_records(payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;
 
     case DS_CMD_CALM_RECORD_DELETE:
+        LOG_INFO("CALM_RECORD_DELETE req\n");
         rsp_len = comfort_store_delete_oldest_record(payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;
 
     case DS_CMD_FACTORY_RESET:
+        LOG_INFO("FACTORY_RESET req\n");
         rsp_len = comfort_store_factory_reset(payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;
