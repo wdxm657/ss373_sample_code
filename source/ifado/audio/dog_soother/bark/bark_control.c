@@ -688,17 +688,28 @@ uint16_t bark_control_handle_strategy_cmd(
     }
     if (cmd_id == DS_CMD_CALM_STRATEGY_GET)
     {
-        return calm_strategy_fill_get_rsp(rsp, rsp_cap);
+        ds_calm_mode_t get_mode = DS_CALM_MODE_AUTO;
+        if (payload_len >= 1)
+        {
+            get_mode = (payload[0] <= DS_CALM_MODE_MANUAL)
+                           ? (ds_calm_mode_t)payload[0]
+                           : DS_CALM_MODE_AUTO;
+        }
+        LOG_INFO("bark_control: DS_CMD_CALM_STRATEGY_GET mode=%d\n", get_mode);
+        return calm_strategy_fill_get_rsp(get_mode, rsp, rsp_cap);
     }
     if (cmd_id == DS_CMD_CALM_STRATEGY_SET)
     {
+        LOG_INFO("bark_control: DS_CMD_CALM_STRATEGY_SET len=%u\n", payload_len);
         if (calm_strategy_set_from_uart_payload(payload, payload_len) != 0)
         {
             rsp[0] = DS_UART_STATUS_PARAM_ERROR;
+            LOG_ERROR("bark_control: strategy set failed\n");
             return 1;
         }
         bark_sync_store_from_strategy();
         rsp[0] = DS_UART_STATUS_OK;
+        LOG_INFO("bark_control: strategy set ok\n");
         return 1;
     }
     rsp[0] = DS_UART_STATUS_PARAM_ERROR;
