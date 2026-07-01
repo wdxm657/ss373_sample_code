@@ -29,6 +29,7 @@
 #define DS_CMD_CALM_RECORD_DELETE 0x42
 #define DS_CMD_FACTORY_RESET 0x50
 #define DS_CMD_BT_LINK_NOTIFY 0x60
+#define DS_CMD_ULTRA_EMIT 0x68
 
 /* SOC -> MCU 事件 cmdId */
 #define DS_EVT_WORK_STATE 0x80

@@ -429,6 +429,7 @@ static void bark_measure_poll_locked(void)
         {
             return;
         }
+        ultrasonic_stop();
         bark_after_measure_done_locked();
     }
 }
