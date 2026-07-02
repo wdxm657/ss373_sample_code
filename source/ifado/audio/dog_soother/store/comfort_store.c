@@ -151,7 +151,7 @@ static int comfort_store_load_records(void)
     }
 
     fclose(fp);
-    LOG_INFO("loaded %u records from %s\n", g_record_cnt, DS_COMFORT_DB_PATH);
+    // LOG_INFO("loaded %u records from %s\n", g_record_cnt, DS_COMFORT_DB_PATH);
     return 0;
 }
 
@@ -385,6 +385,38 @@ uint8_t comfort_store_get_bt_linked(void)
     return g_rt.bt_linked;
 }
 
+uint8_t comfort_store_has_records(void)
+{
+    comfort_store_load_records();
+    /* 遍历缓存（由 comfort_store_init 从文件加载），检查是否存在至少一条完整记录：
+       包含识别(BARK=0x01)、至少一条执行(0x02~0x06)、结果(SUCCESS=0x10/FAIL=0x11) */
+    for (uint8_t i = 0; i < g_record_cnt; i++)
+    {
+        uint8_t idx = (g_record_head + i) % DS_RECORD_MAX;
+        const ds_session_record_t *rec = &g_records[idx];
+        uint8_t has_bark = 0;
+        uint8_t has_measure = 0;
+        uint8_t has_result = 0;
+
+        for (uint8_t j = 0; j < rec->entry_cnt; j++)
+        {
+            uint8_t t = rec->entries[j].type;
+            if (t == DS_RECORD_ENTRY_BARK)
+                has_bark = 1;
+            else if (t >= DS_RECORD_ENTRY_MUSIC && t <= DS_RECORD_ENTRY_US_DUAL)
+                has_measure = 1;
+            else if (t == DS_RECORD_ENTRY_SUCCESS || t == DS_RECORD_ENTRY_FAIL)
+                has_result = 1;
+        }
+
+        if (has_bark && has_measure && has_result)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void comfort_store_set_bt_linked(uint8_t linked) /* BT_LINK_NOTIFY */
 {
     uint8_t old = g_rt.bt_linked;
@@ -453,9 +485,9 @@ uint16_t comfort_store_pull_records(
 
     REQ payload: []（可选 payload 被忽略，始终返回最旧记录）
 
-    RSP payload: [status(1), remainingCount(1), entryCount(1), entries...]
+    RSP payload: [status(1), session_id(1), entryCount(1), entries...]
       status          - DS_UART_STATUS_OK 或 DS_UART_STATUS_NOT_FOUND
-      remainingCount  - 取出本条后剩余记录数
+      session_id      - 本条记录的会话 ID（1 字节，用于后续按 ID 删除）
       entryCount      - 本条记录的 entry 数
       entries         - entryCount 条 entry，每条 [type(1B), ts(4B)] = 5B
 
@@ -467,7 +499,6 @@ uint16_t comfort_store_pull_records(
     ds_record_file_hdr_t hdr;
     ds_record_file_entry_hdr_t fhdr;
     uint8_t entry_cnt;
-    uint8_t remaining;
     uint16_t pos;
     uint8_t i;
 
@@ -512,7 +543,7 @@ uint16_t comfort_store_pull_records(
 
     entry_cnt = (fhdr.entry_cnt <= DS_RECORD_ENTRY_MAX) ? fhdr.entry_cnt : 0;
     {
-        uint16_t need = (uint16_t)(3 + entry_cnt * 5);
+        uint16_t need = (uint16_t)(3 + entry_cnt * 5);  /* status(1)+session_id(1)+entryCnt(1)+entries */
         if (need > rsp_cap || entry_cnt == 0)
         {
             fclose(fp);
@@ -520,10 +551,8 @@ uint16_t comfort_store_pull_records(
             return 1;
         }
 
-        remaining = (hdr.count > 1) ? (uint8_t)(hdr.count - 1) : 0;
-
         rsp[0] = DS_UART_STATUS_OK;
-        rsp[1] = remaining;
+        rsp[1] = (uint8_t)(fhdr.session_id & 0xFF);  /* session_id truncate to 1 byte */
         rsp[2] = entry_cnt;
 
         pos = 3;
@@ -544,11 +573,11 @@ uint16_t comfort_store_pull_records(
     }
 
     fclose(fp);
-    LOG_INFO("pull_records from file: entries=%u remaining=%u\n", entry_cnt, remaining);
+    LOG_INFO("pull_records from file: entries=%u\n", entry_cnt);
     return pos;
 }
 
-uint16_t comfort_store_delete_oldest_record(
+uint16_t comfort_store_delete_record_by_id(
     const uint8_t *req,
     uint16_t req_len,
     uint8_t *rsp,
@@ -557,31 +586,36 @@ uint16_t comfort_store_delete_oldest_record(
     /*
     UART 协议：
 
-    REQ payload: []（可选 payload 被忽略）
-    RSP payload: [status(1), remainingCount(1)]
+    REQ payload: [session_id(1)]
+      要删除的记录的会话 ID（1 字节，由 CALM_RECORD_GET 返回）
+    RSP payload: [status(1)]
 
-    直接从文件读取所有记录，跳过第一条，写回文件。
+    在文件中查找匹配 session_id 的记录并删除，写回文件。
     */
     FILE    *fp;
-    uint8_t  record_buf[4096]; /* 足够容纳 DS_RECORD_MAX 条记录 */
+    uint8_t  record_buf[4096];
     uint16_t file_len;
-    uint16_t remain_len;
+    uint32_t target_id;
 
-    (void)req;
-    (void)req_len;
-
-    if (!rsp || rsp_cap < 2)
+    if (!rsp || rsp_cap < 1)
     {
         return 0;
     }
+
+    if (req_len < 1)
+    {
+        rsp[0] = DS_UART_STATUS_PARAM_ERROR;
+        return 1;
+    }
+
+    target_id = req[0];  /* session_id is 1 byte */
 
     /* 读取整个文件 */
     fp = fopen(DS_COMFORT_DB_PATH, "rb");
     if (!fp)
     {
         rsp[0] = DS_UART_STATUS_OK;
-        rsp[1] = 0;
-        return 2;
+        return 1;
     }
     file_len = (uint16_t)fread(record_buf, 1, sizeof(record_buf), fp);
     fclose(fp);
@@ -589,42 +623,58 @@ uint16_t comfort_store_delete_oldest_record(
     if (file_len < sizeof(ds_record_file_hdr_t))
     {
         rsp[0] = DS_UART_STATUS_OK;
-        rsp[1] = 0;
-        return 2;
+        return 1;
     }
 
-    /* 解析文件头 */
     {
         ds_record_file_hdr_t *hdr = (ds_record_file_hdr_t *)record_buf;
         if (hdr->magic != DS_RECORD_FILE_MAGIC || hdr->version != DS_RECORD_FILE_VER || hdr->count == 0)
         {
             rsp[0] = DS_UART_STATUS_OK;
-            rsp[1] = 0;
-            return 2;
-        }
-
-        /* 跳过第一条记录：从 hdr 之后扫描 entries */
-        uint16_t off = sizeof(ds_record_file_hdr_t);
-        uint8_t  i;
-
-        if (off + sizeof(ds_record_file_entry_hdr_t) > file_len)
-        {
-            rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
             return 1;
         }
 
+        /* 逐条扫描记录，查找匹配 session_id 的记录 */
+        uint16_t off = sizeof(ds_record_file_hdr_t);
+        uint16_t found_off = 0;
+        uint16_t found_size = 0;
+        uint8_t i;
+        uint8_t found = 0;
+
+        for (i = 0; i < hdr->count; i++)
         {
+            if (off + sizeof(ds_record_file_entry_hdr_t) > file_len)
+            {
+                break;
+            }
             ds_record_file_entry_hdr_t *e = (ds_record_file_entry_hdr_t *)&record_buf[off];
             uint8_t entry_cnt = (e->entry_cnt <= DS_RECORD_ENTRY_MAX) ? e->entry_cnt : 0;
             uint16_t rec_size = (uint16_t)(sizeof(ds_record_file_entry_hdr_t) + entry_cnt * sizeof(ds_record_entry_t));
+
+            if (e->session_id == target_id)
+            {
+                found_off = off;
+                found_size = rec_size;
+                found = 1;
+                break;
+            }
             off += rec_size;
         }
 
-        /* 剩余数据量 = 后续记录内容 */
-        remain_len = (off < file_len) ? (uint16_t)(file_len - off) : 0;
+        if (!found)
+        {
+            rsp[0] = DS_UART_STATUS_OK;  /* 没有该记录视为成功（幂等）*/
+            LOG_INFO("delete_record_by_id: session %u not found\n", target_id);
+            return 1;
+        }
+
+        /* 跳过找到的记录：将后续数据前移 */
+        uint16_t after = found_off + found_size;
+        uint16_t remain_len = (after < file_len) ? (uint16_t)(file_len - after) : 0;
+
         hdr->count--;
 
-        /* 写回文件：剩余记录 + 更新后的文件头 */
+        /* 写回文件 */
         fp = fopen(DS_COMFORT_DB_PATH, "wb");
         if (!fp)
         {
@@ -632,27 +682,49 @@ uint16_t comfort_store_delete_oldest_record(
             return 1;
         }
         fwrite(hdr, sizeof(ds_record_file_hdr_t), 1, fp);
+        /* 写 found_off 之前的数据（在找到的记录之前的记录）*/
+        if (found_off > sizeof(ds_record_file_hdr_t))
+        {
+            fwrite(&record_buf[sizeof(ds_record_file_hdr_t)], 1, found_off - sizeof(ds_record_file_hdr_t), fp);
+        }
+        /* 写找到的记录之后的数据 */
         if (remain_len > 0)
         {
-            fwrite(&record_buf[off], 1, remain_len, fp);
+            fwrite(&record_buf[after], 1, remain_len, fp);
         }
         fclose(fp);
 
-        /* 同步更新内存缓存中的记录计数 */
+        /* 同步更新内存缓存 */
         if (g_record_cnt > 0)
         {
-            g_record_cnt--;
-            if (g_record_cnt == 0)
+            /* 从内存环形缓存中找到并移除匹配的记录 */
+            uint8_t j;
+            for (j = 0; j < g_record_cnt; j++)
             {
-                g_record_head = 0;
-                memset(g_records, 0, sizeof(g_records));
+                uint8_t idx = (g_record_head + j) % DS_RECORD_MAX;
+                if (g_records[idx].session_id == target_id)
+                {
+                    /* 将后续记录前移覆盖 */
+                    for (uint8_t k = j; k < g_record_cnt - 1; k++)
+                    {
+                        uint8_t src = (g_record_head + k + 1) % DS_RECORD_MAX;
+                        uint8_t dst = (g_record_head + k) % DS_RECORD_MAX;
+                        memcpy(&g_records[dst], &g_records[src], sizeof(ds_session_record_t));
+                    }
+                    g_record_cnt--;
+                    if (g_record_cnt == 0)
+                    {
+                        g_record_head = 0;
+                        memset(g_records, 0, sizeof(g_records));
+                    }
+                    break;
+                }
             }
         }
 
         rsp[0] = DS_UART_STATUS_OK;
-        rsp[1] = hdr->count;
-        LOG_INFO("delete_oldest from file: remaining=%u\n", hdr->count);
-        return 2;
+        LOG_INFO("delete_record_by_id: session %u ok, remaining=%u\n", target_id, hdr->count);
+        return 1;
     }
 }
 

@@ -66,7 +66,7 @@ typedef struct
 static uint8_t g_power_on = 1;
 static bark_fsm_t g_fsm;
 static pthread_mutex_t g_fsm_mu = PTHREAD_MUTEX_INITIALIZER;
-static uint32_t g_next_session_id = 1;
+static uint8_t g_next_session_id = 1;
 
 static void bark_start_session_locked(uint32_t bark_ts);
 static void bark_begin_action_locked(void);
@@ -293,7 +293,8 @@ static void bark_enter_rest_locked(uint8_t success)
 static void bark_start_session_locked(uint32_t bark_ts)
 {
     g_fsm.in_session = 1;
-    g_fsm.session_id = g_next_session_id++;
+    g_fsm.session_id = g_next_session_id;
+    if (g_next_session_id >= 254) { g_next_session_id = 1; } else { g_next_session_id++; }
     g_fsm.session_bark_ts = bark_ts;
     g_fsm.action_idx = 0;
     g_fsm.last_ok_measure = 0;
@@ -621,6 +622,21 @@ void bark_control_tick(void)
         {
             hb_cnt = 0;
             uart_proto_send_evt(DS_EVT_HEARTBEAT, 0, NULL, 0);
+        }
+    }
+
+    /* 每 5 秒检查：有完整安抚记录时通知 MCU（由 MCU 侧判断 BLE 是否已连接）*/
+    {
+        static uint8_t s_check_cnt = 0;
+        s_check_cnt++;
+        if (s_check_cnt >= 2)
+        {
+            s_check_cnt = 0;
+            if (comfort_store_has_records())
+            {
+                LOG_DEBUG("has_records");
+                uart_proto_send_evt(DS_EVT_NEW_CALM_RECORD, 0, NULL, 0);
+            }
         }
     }
 

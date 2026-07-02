@@ -20,8 +20,8 @@
 /* 单条记录最多条目数（1 吠叫 + 最多 6 措施 + 1 结果） */
 #define DS_RECORD_ENTRY_MAX         8
 
-/* 内存保留的最大记录数 */
-#define DS_RECORD_MAX               20
+/* 内存保留的最大记录数（超过时覆盖最旧记录） */
+#define DS_RECORD_MAX               128
 
 /* 单次 UART RSP 分片最多携带的 entry 数（64B payload 最多装 12 条） */
 #define DS_RECORD_CHUNK_MAX         10
@@ -64,14 +64,14 @@ uint16_t comfort_store_pull_records(
     uint16_t rsp_cap);
 
 /**
- * @brief 删除最旧的一条安抚记录（APP 获取完成后调用）
- * @param req      请求体（空）
+ * @brief 按 session_id 删除一条安抚记录
+ * @param req      请求体: [session_id(4LE)]
  * @param req_len  请求长度
- * @param rsp      响应缓冲区: [status, remainingCount]
+ * @param rsp      响应缓冲区: [status]
  * @param rsp_cap  响应缓冲区容量
  * @return 响应体长度
  */
-uint16_t comfort_store_delete_oldest_record(
+uint16_t comfort_store_delete_record_by_id(
     const uint8_t *req,
     uint16_t req_len,
     uint8_t *rsp,
@@ -82,6 +82,12 @@ uint16_t comfort_store_factory_reset(
     uint16_t req_len,
     uint8_t *rsp,
     uint16_t rsp_cap);
+
+/**
+ * @brief 检查是否有安抚记录存储
+ * @return 1=有记录，0=无记录
+ */
+uint8_t comfort_store_has_records(void);
 
 ds_work_state_t comfort_store_get_work_state(void);
 void comfort_store_set_work_state(ds_work_state_t state);

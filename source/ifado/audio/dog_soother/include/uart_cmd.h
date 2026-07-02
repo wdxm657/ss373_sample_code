@@ -40,5 +40,6 @@
 #define DS_EVT_LOG_DATA 0x85
 #define DS_EVT_ERROR 0x86
 #define DS_EVT_HEARTBEAT 0x87
+#define DS_EVT_NEW_CALM_RECORD 0x88  /* 安抚记录已保存完成通知 */
 
 #endif /* DOG_SOOTHER_UART_CMD_H_ */

@@ -16,6 +16,13 @@
 #include "audio_ao.h"
 #include "app_config.h"
 #include "system_time.h"
+#include <stdio.h>
+
+/* 安抚记录数据库路径（同 app_config.h 中的 DS_COMFORT_DB_PATH）*/
+#ifndef DS_COMFORT_DB_PATH
+#define DS_COMFORT_DB_PATH  DS_USERDATA_DIR "/params/comfort_records.bin"
+#endif
+#define DS_COMFORT_DB_BK_PATH  DS_USERDATA_DIR "/params/comfort_records.bin.bk"
 
 static void uart_reply_status(uint8_t seq) /* 0x11：9 字节状态 RSP */
 {
@@ -47,6 +54,28 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
     case DS_CMD_POWER_CTRL:
         if (payload_len >= 1)
         {
+            if (payload[0])
+            {
+                /* 开机时尝试从备份文件恢复安抚记录 */
+                FILE *fp_src = fopen(DS_COMFORT_DB_BK_PATH, "rb");
+                if (fp_src)
+                {
+                    FILE *fp_dst = fopen(DS_COMFORT_DB_PATH, "wb");
+                    if (fp_dst)
+                    {
+                        uint8_t buf[512];
+                        size_t n;
+                        while ((n = fread(buf, 1, sizeof(buf), fp_src)) > 0)
+                        {
+                            fwrite(buf, 1, n, fp_dst);
+                        }
+                        fclose(fp_dst);
+                        LOG_INFO("POWER_CTRL: restored records from %s\n",
+                                 DS_COMFORT_DB_BK_PATH);
+                    }
+                    fclose(fp_src);
+                }
+            }
             bark_control_set_power(payload[0] ? 1 : 0);
             rsp[0] = DS_UART_STATUS_OK;
             rsp[1] = payload[0];
@@ -133,8 +162,8 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
         return;
 
     case DS_CMD_CALM_RECORD_DELETE:
-        LOG_INFO("CALM_RECORD_DELETE req\n");
-        rsp_len = comfort_store_delete_oldest_record(payload, payload_len, rsp, sizeof(rsp));
+        LOG_INFO("CALM_RECORD_DELETE req len=%u\n", payload_len);
+        rsp_len = comfort_store_delete_record_by_id(payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;
 
