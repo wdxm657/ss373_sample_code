@@ -108,16 +108,14 @@ static void *led_blink_thread(void *arg)
 
     while (g_blink_running)
     {
-        half_ms = g_blink_period_ms / 2;
+        half_ms = g_blink_period_ms;
         if (half_ms < 50) half_ms = 50;
 
         pthread_mutex_lock(&g_led_mu);
         led_apply_color(g_current_color);
         pthread_mutex_unlock(&g_led_mu);
 
-        ts.tv_sec  = half_ms / 1000;
-        ts.tv_nsec = (long)(half_ms % 1000) * 1000000L;
-        nanosleep(&ts, NULL);
+        usleep(g_blink_period_ms * 1000);
 
         if (!g_blink_running) break;
 
@@ -125,9 +123,7 @@ static void *led_blink_thread(void *arg)
         led_apply_color(LED_COLOR_OFF);
         pthread_mutex_unlock(&g_led_mu);
 
-        ts.tv_sec  = half_ms / 1000;
-        ts.tv_nsec = (long)(half_ms % 1000) * 1000000L;
-        nanosleep(&ts, NULL);
+        usleep(g_blink_period_ms * 1000);
     }
     return NULL;
 }
