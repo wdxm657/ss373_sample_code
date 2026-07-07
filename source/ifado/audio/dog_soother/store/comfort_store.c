@@ -50,7 +50,6 @@ typedef struct
     uint8_t power_on;           /* out[1] */
     ds_work_state_t work_state; /* out[2] */
     uint8_t bt_linked;          /* out[3] */
-    uint8_t owner_voice_exist;  /* out[4] */
     uint8_t owner_duration_sec; /* 缓存时长，文件存在时刷新 */
     uint8_t volume;             /* out[5]，与 audio 模块同步待完善 */
     ds_calm_mode_t calm_mode;   /* out[6] */
@@ -83,7 +82,6 @@ static ds_runtime_t g_rt = {
     .power_on = 0,
     .work_state = DS_WORK_OFF,
     .bt_linked = 0,
-    .owner_voice_exist = 0,
     .owner_duration_sec = 0,
     .volume = 10,   /* +10 dB（与 audio_ao_init 默认增益一致）*/
     .calm_mode = DS_CALM_MODE_AUTO,
@@ -151,7 +149,10 @@ static int comfort_store_load_records(void)
     }
 
     fclose(fp);
-    // LOG_INFO("loaded %u records from %s\n", g_record_cnt, DS_COMFORT_DB_PATH);
+    if (g_record_cnt)
+    {
+        LOG_DEBUG("loaded %u records from %s\n", g_record_cnt, DS_COMFORT_DB_PATH);
+    }
     return 0;
 }
 
@@ -217,6 +218,7 @@ static ds_session_record_t *comfort_store_find_record(uint32_t session_id)
     for (i = 0; i < g_record_cnt; i++)
     {
         uint8_t idx = (g_record_head + i) % DS_RECORD_MAX;
+        LOG_DEBUG("idx: %d", idx);
         if (g_records[idx].session_id == session_id)
         {
             return &g_records[idx];
@@ -273,7 +275,7 @@ void comfort_store_record_begin(uint32_t session_id, uint32_t bark_ts)
     rec->entry_cnt++;
 
     g_record_cnt++;
-    LOG_INFO("record begin session=%u bark_ts=%u\n", session_id, bark_ts);
+    LOG_INFO("record begin session=%u bark_ts=%u recor_cnt %d\n", session_id, bark_ts, g_record_cnt);
 }
 
 void comfort_store_record_append_measure(uint32_t session_id, uint8_t type, uint32_t ts)
@@ -282,7 +284,7 @@ void comfort_store_record_append_measure(uint32_t session_id, uint8_t type, uint
 
     if (!rec)
     {
-        LOG_INFO("record append: session %u not found\n", session_id);
+        LOG_ERROR("record append: session %u not found\n", session_id);
         return;
     }
     if (rec->entry_cnt >= DS_RECORD_ENTRY_MAX)
@@ -303,7 +305,7 @@ void comfort_store_record_finish(uint32_t session_id, uint8_t success, uint32_t 
 
     if (!rec)
     {
-        LOG_INFO("record finish: session %u not found\n", session_id);
+        LOG_ERROR("record finish: session %u not found\n", session_id);
         return;
     }
 
@@ -327,7 +329,6 @@ void comfort_store_record_finish(uint32_t session_id, uint8_t success, uint32_t 
 
 int comfort_store_init(void) /* 从 owner.wav 刷新录音存在标志，加载安抚记录 */
 {
-    audio_refresh_owner_info(&g_rt.owner_voice_exist, &g_rt.owner_duration_sec);
     comfort_store_load_records();
     LOG_INFO("comfort_store init\n");
     return 0;
@@ -340,7 +341,7 @@ void comfort_store_deinit(void) /* 持久化当前记录 */
 
 void comfort_store_fill_status_payload(uint8_t *out, uint16_t out_cap, uint16_t *out_len)
 {
-    /* out[0]=status, [1]power [2]work [3]bt [4]owner_exist [5]vol [6]mode [7]enabled [8]us */
+    /* out[0]=status, [1]power [2]work [3]bt  [4]vol [5]mode [6]enabled [7]us */
     if (!out || !out_len || out_cap < 9)
     {
         if (out_len)
@@ -350,18 +351,16 @@ void comfort_store_fill_status_payload(uint8_t *out, uint16_t out_cap, uint16_t 
         return;
     }
 
-    audio_refresh_owner_info(&g_rt.owner_voice_exist, &g_rt.owner_duration_sec);
 
     out[0] = DS_UART_STATUS_OK;
     out[1] = g_rt.power_on;
     out[2] = (uint8_t)g_rt.work_state;
     out[3] = g_rt.bt_linked;
-    out[4] = g_rt.owner_voice_exist;
-    out[5] = audio_get_volume();
-    out[6] = (uint8_t)g_rt.calm_mode;
-    out[7] = g_rt.enabled_mask;
-    out[8] = g_rt.us_mask;
-    *out_len = 9;
+    out[4] = audio_get_volume();
+    out[5] = (uint8_t)g_rt.calm_mode;
+    out[6] = g_rt.enabled_mask;
+    out[7] = g_rt.us_mask;
+    *out_len = 8;
 }
 
 void comfort_store_set_power(uint8_t on) /* POWER_CTRL 写入 */
@@ -387,6 +386,13 @@ uint8_t comfort_store_get_bt_linked(void)
 
 uint8_t comfort_store_has_records(void)
 {
+    // 只能在OFF状态或休息状态
+    if (g_rt.work_state == DS_WORK_OFF || g_rt.work_state == DS_WORK_RESTING)
+    {
+    }
+    else
+        return 0;
+    
     comfort_store_load_records();
     /* 遍历缓存（由 comfort_store_init 从文件加载），检查是否存在至少一条完整记录：
        包含识别(BARK=0x01)、至少一条执行(0x02~0x06)、结果(SUCCESS=0x10/FAIL=0x11) */
@@ -433,13 +439,36 @@ ds_work_state_t comfort_store_get_work_state(void)
     return g_rt.work_state;
 }
 
+static char* state_name_(ds_work_state_t state){
+    // DS_WORK_OFF = 0,           /* （关机）未开启音频识别 */
+    // DS_WORK_MONITORING = 1,    /* 监测中，等待吠叫 */
+    // DS_WORK_IDENTIFYING = 2,   /* 识别/判定中 */
+    // DS_WORK_ACTING = 3,        /* 执行安抚措施 */
+    // DS_WORK_RESTING = 4,       /* 安抚后冷却 */
+    switch (state)
+    {
+    case DS_WORK_OFF:
+        return "OFF";
+    case DS_WORK_MONITORING:
+        return "MONITORING";
+    case DS_WORK_IDENTIFYING:
+        return "IDENTIFYING";
+    case DS_WORK_ACTING:
+        return "ACTING";
+    case DS_WORK_RESTING:
+        return "RESTING";
+    default:
+        return "UNKNOW";
+    }
+}
+
 void comfort_store_set_work_state(ds_work_state_t state) /* bark_control 状态机更新 */
 {
     ds_work_state_t old = g_rt.work_state;
     g_rt.work_state = state;
     if (old != g_rt.work_state)
     {
-        LOG_INFO("state_change: work_state %u -> %u\n", (uint8_t)old, (uint8_t)g_rt.work_state);
+        LOG_INFO("state_change: work_state %s -> %s\n", state_name_(old), state_name_(g_rt.work_state));
     }
 }
 
@@ -738,8 +767,6 @@ uint16_t comfort_store_factory_reset(/* 删主人录音、清记录、恢复默�
     (void)req_len;
 
     audio_delete_owner_rec();
-    LOG_INFO("state_change: owner_voice_exist %u -> 0 (factory_reset)\n", g_rt.owner_voice_exist);
-    g_rt.owner_voice_exist = 0;
     g_rt.owner_duration_sec = 0;
 
     /* 清空安抚记录 */

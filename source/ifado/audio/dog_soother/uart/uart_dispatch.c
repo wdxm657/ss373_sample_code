@@ -35,7 +35,7 @@ static void uart_reply_status(uint8_t seq) /* 0x11：9 字节状态 RSP */
         uart_proto_send_rsp(DS_CMD_STATUS_GET, seq, err, 1);
         return;
     }
-    LOG_INFO("STATUS_GET rsp: work=%u vol=%u mode=%u\n", payload[2], payload[5], payload[6]);
+    LOG_INFO("STATUS_GET rsp: work=%u vol=%u mode=%u\n", payload[2], payload[4], payload[5]);
     uart_proto_send_rsp(DS_CMD_STATUS_GET, seq, payload, len);
 }
 

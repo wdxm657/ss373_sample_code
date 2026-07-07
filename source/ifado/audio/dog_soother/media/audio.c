@@ -129,7 +129,7 @@ static MI_S32 audio_wav_fill_header(WaveFileHeader_t *hdr, uint32_t pcm_bytes) /
     return MI_SUCCESS;
 }
 
-static void audio_owner_rec_stop_internal(uint8_t auto_stop) /* 写头、发 0x84、不足最小时长删文件 */
+static void audio_owner_rec_stop_internal(uint8_t auto_stop, uint8_t *rsp) /* 写头、发 0x84、不足最小时长删文件 */
 {
     uint8_t duration_sec = 0;
 
@@ -165,15 +165,22 @@ static void audio_owner_rec_stop_internal(uint8_t auto_stop) /* 写头、发 0x8
              duration_sec,
              g_rec_pcm_bytes);
 
+    if (rsp)
+    {
+        rsp[1] = duration_sec;
+    }
+             
     /* 录制完成 → 文件在 tmp 目录；记录时间戳用于超时清理 */
     if (duration_sec >= DS_OWNER_REC_MIN_SEC)
     {
+        rsp[0] = DS_UART_STATUS_OK;
         g_owner_tmp_create_sec = time(NULL);
         uint8_t evt[3] = {0x01, DS_UART_STATUS_OK, duration_sec};
         uart_proto_send_evt(DS_EVT_OWNER_REC, 0, evt, sizeof(evt));
     }
     else if (duration_sec > 0)
     {
+        rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
         g_owner_tmp_create_sec = 0;
         uint8_t evt[3] = {0x01, DS_UART_STATUS_PARAM_ERROR, duration_sec};
         uart_proto_send_evt(DS_EVT_OWNER_REC, 0, evt, sizeof(evt));
@@ -200,7 +207,7 @@ static void audio_rec_process_frame(const audio_stream_frame_t *frame) /* 追加
     now = time(NULL);
     if (g_rec_start_sec > 0 && (now - g_rec_start_sec) >= DS_OWNER_REC_MAX_SEC)
     {
-        audio_owner_rec_stop_internal(1);
+        audio_owner_rec_stop_internal(1, NULL);
         return;
     }
 
@@ -345,7 +352,7 @@ int audio_init(void) /* AI+AO+采集流+录制线程；失败时回滚已初始�
 
 void audio_deinit(void) /* 停录、停流、停播、释放 MI */
 {
-    audio_owner_rec_stop_internal(1);
+    audio_owner_rec_stop_internal(1, NULL);
     /* 清理未保存的 tmp 录音文件 */
     unlink(DS_OWNER_REC_TMP_PATH);
     g_owner_tmp_create_sec = 0;
@@ -380,7 +387,7 @@ void audio_refresh_owner_info(uint8_t *exist, uint8_t *duration_sec) /* 供 STAT
 
 void audio_delete_owner_rec(void) /* 停录并删除录音文件 */
 {
-    audio_owner_rec_stop_internal(0);
+    audio_owner_rec_stop_internal(0, NULL);
     unlink(DS_OWNER_REC_TMP_PATH);
     unlink(DS_OWNER_PCM_PATH);
     g_owner_duration_sec = 0;
@@ -429,6 +436,21 @@ uint16_t audio_set_volume(/* payload[0]=0-100 百分比；rsp: status + 当前�
     rsp[0] = DS_UART_STATUS_OK;
     rsp[1] = pct;  /* 返回 0-100 */
     return 2;
+}
+
+/* 延迟停止录制线程句柄（文件作用域，供线程函数和 handler 共用）*/
+static pthread_t g_audio_delayed_stop_th = 0;
+
+/* 延迟 1s 停止录制的线程函数 */
+static void *audio_delayed_stop_thread(void *arg)
+{
+    (void)arg;
+    sleep(2);
+    LOG_INFO("delayed stop thread: 1s elapsed, stopping rec\n");
+    uint8_t tmp_rsp[4];
+    audio_owner_rec_stop_internal(0, tmp_rsp);
+    g_audio_delayed_stop_th = 0;
+    return NULL;
 }
 
 uint16_t audio_handle_uart_cmd(/* 0x20~0x25 主人录音；返回 rsp 长度，0 表示参数错误 */
@@ -492,9 +514,32 @@ uint16_t audio_handle_uart_cmd(/* 0x20~0x25 主人录音；返回 rsp 长度，0
         return 1;
 
     case DS_CMD_OWNER_REC_STOP:
-        audio_owner_rec_stop_internal(0);
-        rsp[0] = DS_UART_STATUS_OK;
-        return 1;
+    {
+        /* 延迟 1s 后再停止录制（等待音频数据写入完整）*/
+        if (g_audio_delayed_stop_th != 0)
+        {
+            LOG_INFO("owner rec stop: already pending, ignore\n");
+            rsp[0] = DS_UART_STATUS_BUSY;
+            return 1;
+        }
+        /* 创建一个分离线程，1s 后执行停止 */
+        if (pthread_create(&g_audio_delayed_stop_th, NULL, audio_delayed_stop_thread, NULL) == 0)
+        {
+            pthread_detach(g_audio_delayed_stop_th);
+            LOG_INFO("owner rec stop: delayed 1s thread created\n");
+            /* 立即回复 OK，实际停止由线程完成 */
+            rsp[0] = DS_UART_STATUS_OK;
+            rsp[1] = 0;
+            return 2;
+        }
+        else
+        {
+            g_audio_delayed_stop_th = 0;
+            LOG_ERROR("owner rec stop: failed to create delayed thread\n");
+            audio_owner_rec_stop_internal(0, rsp);
+            return 2;
+        }
+    }
 
     case DS_CMD_OWNER_REC_PLAY:
     {

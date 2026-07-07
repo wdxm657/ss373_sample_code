@@ -177,7 +177,7 @@ void led_set_color(uint8_t color)
     g_current_color = color & 0x07;
     led_apply_color(g_current_color);
     pthread_mutex_unlock(&g_led_mu);
-    LOG_INFO("led set color=0x%02x\n", g_current_color);
+    // LOG_INFO("led set color=0x%02x\n", g_current_color);
 }
 
 void led_off(void)

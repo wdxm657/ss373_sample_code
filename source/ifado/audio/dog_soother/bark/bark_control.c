@@ -625,7 +625,7 @@ void bark_control_tick(void)
         }
     }
 
-    /* 每 5 秒检查：有完整安抚记录时通知 MCU（由 MCU 侧判断 BLE 是否已连接）*/
+    /* 每 5 秒检查：有完整安抚记录时通知 MCU（由 MCU 侧判断 BLE 是否已连接*/
     {
         static uint8_t s_check_cnt = 0;
         s_check_cnt++;
