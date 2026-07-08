@@ -325,6 +325,34 @@ void comfort_store_record_finish(uint32_t session_id, uint8_t success, uint32_t 
              session_id, success, rec->entry_cnt);
 }
 
+void comfort_store_discard_record(uint32_t session_id)
+{
+    /* 从内存缓存中移除记录，不写入文件 */
+    for (uint8_t i = 0; i < g_record_cnt; i++)
+    {
+        uint8_t idx = (g_record_head + i) % DS_RECORD_MAX;
+        if (g_records[idx].session_id == session_id)
+        {
+            /* 将后续记录前移覆盖 */
+            for (uint8_t k = i; k < g_record_cnt - 1; k++)
+            {
+                uint8_t src = (g_record_head + k + 1) % DS_RECORD_MAX;
+                uint8_t dst = (g_record_head + k) % DS_RECORD_MAX;
+                memcpy(&g_records[dst], &g_records[src], sizeof(ds_session_record_t));
+            }
+            g_record_cnt--;
+            if (g_record_cnt == 0)
+            {
+                g_record_head = 0;
+                memset(g_records, 0, sizeof(g_records));
+            }
+            LOG_INFO("discard_record session=%u ok, remaining=%u\n", session_id, g_record_cnt);
+            return;
+        }
+    }
+    LOG_INFO("discard_record session=%u not found\n", session_id);
+}
+
 /* ========== 运行时状态 API ========== */
 
 int comfort_store_init(void) /* 从 owner.wav 刷新录音存在标志，加载安抚记录 */

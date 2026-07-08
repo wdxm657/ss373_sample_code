@@ -122,6 +122,12 @@ void comfort_store_record_append_measure(uint32_t session_id, uint8_t type, uint
 void comfort_store_record_finish(uint32_t session_id, uint8_t success, uint32_t end_ts);
 
 /**
+ * @brief 丢弃一条未完成的安抚记录（从内存缓存移除，不写入文件）
+ * @param session_id 会话 ID
+ */
+void comfort_store_discard_record(uint32_t session_id);
+
+/**
  * @brief 将措施类型映射为记录条目类型
  * @param measure     措施类型（DS_MEASURE_MUSIC / OWNER_VOICE / ULTRASONIC）
  * @param us_profile  超声波档位，仅 measure=ULTRASONIC 时有效

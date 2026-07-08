@@ -128,6 +128,7 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;
     case DS_CMD_OWNER_REC_PLAY_STOP:
+        if (uart_reject_if_session_active(cmd_id, seq, rsp)) return;
         LOG_INFO("OWNER_REC_PLAY_STOP req\n");
         rsp_len = audio_handle_uart_cmd(cmd_id, payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
@@ -144,6 +145,7 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;
     case DS_CMD_OWNER_REC_SAVE:
+        if (uart_reject_if_session_active(cmd_id, seq, rsp)) return;
         LOG_INFO("OWNER_REC_SAVE req\n");
         rsp_len = audio_handle_uart_cmd(cmd_id, payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);

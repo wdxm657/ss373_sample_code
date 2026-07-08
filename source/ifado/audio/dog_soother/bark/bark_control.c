@@ -568,6 +568,16 @@ void bark_control_set_power(uint8_t on)
     pthread_mutex_lock(&g_fsm_mu);
     if (!g_power_on)
     {
+        /* 立即停止正在执行的安抚措施 */
+        audio_ao_stop();
+        ultrasonic_stop();
+
+        /* 若会话进行中，丢弃未完成的记录 */
+        if (g_fsm.in_session)
+        {
+            comfort_store_discard_record(g_fsm.session_id);
+        }
+
         bark_detect_set_active(0);
         bark_set_work_state(DS_WORK_OFF, 0);
         g_fsm.in_session = 0;
