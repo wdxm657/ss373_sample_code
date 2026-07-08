@@ -6,6 +6,7 @@
 /* 初始化 MI 音频、采集/录制线程 */
 int audio_init(void);
 void audio_deinit(void);
+void resume_ai();
 
 /* 从 owner.wav 刷新是否存在及时长（秒） */
 void audio_refresh_owner_info(uint8_t *exist, uint8_t *duration_sec);

@@ -2,6 +2,7 @@
 #define LOG_TAG "audio_ao"
 #include "log.h"
 
+#include "audio.h"
 #include "audio_ao.h"
 #include "audio_sys.h"
 #include "app_config.h"
@@ -232,6 +233,8 @@ static void *audio_ao_play_thread(void *arg) /* 跳过 WAV 头后循环 MI_AO_Wr
     audio_ao_gpio14_set(0);
 
     LOG_INFO("ao play done/stop\n");
+    // 此时需要允许AI继续运行
+    resume_ai();
     return NULL;
 }
 

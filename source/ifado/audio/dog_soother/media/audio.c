@@ -481,6 +481,14 @@ static void *audio_delayed_stop_thread(void *arg)
     return NULL;
 }
 
+void resume_ai(){
+    if (g_owner_play_ai_paused)
+    {
+        g_owner_play_ai_paused = 0;
+        bark_detect_set_active(1);
+    }
+}
+
 uint16_t audio_handle_uart_cmd(/* 0x20~0x25 主人录音；返回 rsp 长度，0 表示参数错误 */
                                uint8_t cmd_id,
                                const uint8_t *payload,
@@ -604,11 +612,7 @@ uint16_t audio_handle_uart_cmd(/* 0x20~0x25 主人录音；返回 rsp 长度，0
 
     case DS_CMD_OWNER_REC_PLAY_STOP:
         audio_ao_stop();
-        if (g_owner_play_ai_paused)
-        {
-            g_owner_play_ai_paused = 0;
-            bark_detect_set_active(1);
-        }
+        resume_ai();
         rsp[0] = DS_UART_STATUS_OK;
         return 1;
 
