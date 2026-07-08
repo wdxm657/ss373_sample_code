@@ -22,6 +22,9 @@ uint16_t bark_control_set_mode(
     uint8_t *rsp,
     uint16_t rsp_cap);
 
+/* 安抚会话是否进行中（从第一次狗叫识别到休息开始）*/
+uint8_t bark_control_is_session_active(void);
+
 uint16_t bark_control_handle_strategy_cmd(
     uint8_t cmd_id,
     const uint8_t *payload,

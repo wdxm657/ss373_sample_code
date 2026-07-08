@@ -664,6 +664,11 @@ void bark_control_tick(void)
     pthread_mutex_unlock(&g_fsm_mu);
 }
 
+uint8_t bark_control_is_session_active(void)
+{
+    return g_fsm.in_session;
+}
+
 uint16_t bark_control_set_mode(
     const uint8_t *payload,
     uint16_t payload_len,

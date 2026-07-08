@@ -39,6 +39,19 @@ static void uart_reply_status(uint8_t seq) /* 0x11：9 字节状态 RSP */
     uart_proto_send_rsp(DS_CMD_STATUS_GET, seq, payload, len);
 }
 
+/* 安抚会话进行中时禁止的操作 */
+static int uart_reject_if_session_active(uint8_t cmd_id, uint8_t seq, uint8_t *rsp)
+{
+    if (bark_control_is_session_active())
+    {
+        LOG_INFO("REJECT cmd=0x%02x: session active\n", cmd_id);
+        rsp[0] = DS_UART_STATUS_STATE_CONFLICT;
+        uart_proto_send_rsp(cmd_id, seq, rsp, 1);
+        return 1;
+    }
+    return 0;
+}
+
 static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uint16_t payload_len) /* switch cmd */
 {
     uint8_t rsp[DS_UART_MAX_PAYLOAD];
@@ -97,16 +110,19 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
         return;
 
     case DS_CMD_OWNER_REC_START:
+        if (uart_reject_if_session_active(cmd_id, seq, rsp)) return;
         LOG_INFO("OWNER_REC_START req\n");
         rsp_len = audio_handle_uart_cmd(cmd_id, payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;
     case DS_CMD_OWNER_REC_STOP:
+        if (uart_reject_if_session_active(cmd_id, seq, rsp)) return;
         LOG_INFO("OWNER_REC_STOP req\n");
         rsp_len = audio_handle_uart_cmd(cmd_id, payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;
     case DS_CMD_OWNER_REC_PLAY:
+        if (uart_reject_if_session_active(cmd_id, seq, rsp)) return;
         LOG_INFO("OWNER_REC_PLAY req src=%u\n", payload_len >= 1 ? payload[0] : 0xFF);
         rsp_len = audio_handle_uart_cmd(cmd_id, payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
@@ -117,6 +133,7 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;
     case DS_CMD_OWNER_REC_DELETE:
+        if (uart_reject_if_session_active(cmd_id, seq, rsp)) return;
         LOG_INFO("OWNER_REC_DELETE req\n");
         rsp_len = audio_handle_uart_cmd(cmd_id, payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
@@ -133,12 +150,14 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
         return;
 
     case DS_CMD_CALM_MODE_SET:
+        if (uart_reject_if_session_active(cmd_id, seq, rsp)) return;
         LOG_INFO("CALM_MODE_SET req mode=%u\n", payload_len >= 1 ? payload[0] : 0xFF);
         rsp_len = bark_control_set_mode(payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;
 
     case DS_CMD_CALM_STRATEGY_SET:
+        if (uart_reject_if_session_active(cmd_id, seq, rsp)) return;
         LOG_INFO("CALM_STRATEGY_SET req len=%u\n", payload_len);
         rsp_len = bark_control_handle_strategy_cmd(cmd_id, payload, payload_len, rsp, sizeof(rsp));
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);

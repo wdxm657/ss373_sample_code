@@ -385,40 +385,50 @@ uint8_t comfort_store_get_bt_linked(void)
 
 uint8_t comfort_store_has_records(void)
 {
-    // 只能在OFF状态或休息状态
-    if (g_rt.work_state == DS_WORK_OFF || g_rt.work_state == DS_WORK_RESTING)
-    {
-    }
-    else
-        return 0;
-    
-    comfort_store_load_records();
-    /* 遍历缓存（由 comfort_store_init 从文件加载），检查是否存在至少一条完整记录：
-       包含识别(BARK=0x01)、至少一条执行(0x02~0x06)、结果(SUCCESS=0x10/FAIL=0x11) */
-    for (uint8_t i = 0; i < g_record_cnt; i++)
-    {
-        uint8_t idx = (g_record_head + i) % DS_RECORD_MAX;
-        const ds_session_record_t *rec = &g_records[idx];
-        uint8_t has_bark = 0;
-        uint8_t has_measure = 0;
-        uint8_t has_result = 0;
+    /* 直接从文件读取，不经过内存缓存（不污染全局变量）*/
+    FILE *fp = fopen(DS_COMFORT_DB_PATH, "rb");
+    if (!fp) return 0;
 
-        for (uint8_t j = 0; j < rec->entry_cnt; j++)
+    ds_record_file_hdr_t hdr;
+    if (fread(&hdr, sizeof(hdr), 1, fp) != 1 ||
+        hdr.magic != DS_RECORD_FILE_MAGIC ||
+        hdr.version != DS_RECORD_FILE_VER ||
+        hdr.count == 0)
+    {
+        fclose(fp);
+        return 0;
+    }
+
+    /* 逐条扫描记录，检查是否有完整的记录（BARK + 执行 + 结果）*/
+    for (uint8_t i = 0; i < hdr.count; i++)
+    {
+        ds_record_file_entry_hdr_t fhdr;
+        if (fread(&fhdr, sizeof(fhdr), 1, fp) != 1) break;
+
+        uint8_t entry_cnt = (fhdr.entry_cnt <= DS_RECORD_ENTRY_MAX) ? fhdr.entry_cnt : 0;
+        uint8_t has_bark = 0, has_measure = 0, has_result = 0;
+
+        for (uint8_t j = 0; j < entry_cnt; j++)
         {
-            uint8_t t = rec->entries[j].type;
-            if (t == DS_RECORD_ENTRY_BARK)
+            ds_record_entry_t entry;
+            if (fread(&entry, sizeof(entry), 1, fp) != 1) break;
+
+            if (entry.type == DS_RECORD_ENTRY_BARK)
                 has_bark = 1;
-            else if (t >= DS_RECORD_ENTRY_MUSIC && t <= DS_RECORD_ENTRY_US_DUAL)
+            else if (entry.type >= DS_RECORD_ENTRY_MUSIC && entry.type <= DS_RECORD_ENTRY_US_DUAL)
                 has_measure = 1;
-            else if (t == DS_RECORD_ENTRY_SUCCESS || t == DS_RECORD_ENTRY_FAIL)
+            else if (entry.type == DS_RECORD_ENTRY_SUCCESS || entry.type == DS_RECORD_ENTRY_FAIL)
                 has_result = 1;
         }
 
         if (has_bark && has_measure && has_result)
         {
+            fclose(fp);
             return 1;
         }
     }
+
+    fclose(fp);
     return 0;
 }
 
