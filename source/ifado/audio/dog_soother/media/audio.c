@@ -166,21 +166,21 @@ static void audio_owner_rec_stop_internal(uint8_t auto_stop, uint8_t *rsp) /* �
              g_rec_pcm_bytes);
 
     if (rsp)
-    {
         rsp[1] = duration_sec;
-    }
              
     /* 录制完成 → 文件在 tmp 目录；记录时间戳用于超时清理 */
     if (duration_sec >= DS_OWNER_REC_MIN_SEC)
     {
-        rsp[0] = DS_UART_STATUS_OK;
+        if (rsp)
+            rsp[0] = DS_UART_STATUS_OK;
         g_owner_tmp_create_sec = time(NULL);
         uint8_t evt[3] = {0x01, DS_UART_STATUS_OK, duration_sec};
         uart_proto_send_evt(DS_EVT_OWNER_REC, 0, evt, sizeof(evt));
     }
     else if (duration_sec > 0)
     {
-        rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
+        if (rsp)
+            rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
         g_owner_tmp_create_sec = 0;
         uint8_t evt[3] = {0x01, DS_UART_STATUS_PARAM_ERROR, duration_sec};
         uart_proto_send_evt(DS_EVT_OWNER_REC, 0, evt, sizeof(evt));
@@ -373,14 +373,42 @@ void audio_refresh_owner_info(uint8_t *exist, uint8_t *duration_sec) /* 供 STAT
     }
     if (duration_sec)
     {
-        if (owner_file_exists() && g_owner_duration_sec == 0)
+        if (owner_file_exists())
         {
-            /* 重启后未缓存时长时仅报存在 */
-            *duration_sec = 0;
+            if (g_owner_duration_sec > 0)
+            {
+                *duration_sec = g_owner_duration_sec;
+            }
+            else
+            {
+                /* 重启后未缓存时长，从 WAV 文件计算实际时长 */
+                FILE *fp = fopen(DS_OWNER_PCM_PATH, "rb");
+                if (fp)
+                {
+                    fseek(fp, 0, SEEK_END);
+                    long file_size = ftell(fp);
+                    fclose(fp);
+                    if (file_size > 44)
+                    {
+                        long pcm_bytes = file_size - 44;
+                        *duration_sec = (uint8_t)(pcm_bytes / (DS_AUDIO_SAMPLE_RATE * 2));
+                        if (*duration_sec > DS_OWNER_REC_MAX_SEC)
+                            *duration_sec = DS_OWNER_REC_MAX_SEC;
+                    }
+                    else
+                    {
+                        *duration_sec = 0;
+                    }
+                }
+                else
+                {
+                    *duration_sec = 0;
+                }
+            }
         }
         else
         {
-            *duration_sec = g_owner_duration_sec;
+            *duration_sec = 0;
         }
     }
 }
@@ -445,7 +473,7 @@ static pthread_t g_audio_delayed_stop_th = 0;
 static void *audio_delayed_stop_thread(void *arg)
 {
     (void)arg;
-    sleep(2);
+    usleep(1500 * 1000);
     LOG_INFO("delayed stop thread: 1s elapsed, stopping rec\n");
     uint8_t tmp_rsp[4];
     audio_owner_rec_stop_internal(0, tmp_rsp);
@@ -529,7 +557,7 @@ uint16_t audio_handle_uart_cmd(/* 0x20~0x25 主人录音；返回 rsp 长度，0
             LOG_INFO("owner rec stop: delayed 1s thread created\n");
             /* 立即回复 OK，实际停止由线程完成 */
             rsp[0] = DS_UART_STATUS_OK;
-            rsp[1] = 0;
+            rsp[1] = (uint8_t)(time(NULL) - g_rec_start_sec);
             return 2;
         }
         else

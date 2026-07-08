@@ -328,6 +328,18 @@ int calm_strategy_set_from_uart_payload(const uint8_t *payload, uint16_t len)
              g_st.mode, g_st.enabled_mask,
              g_st.measure_order[0], g_st.measure_order[1], g_st.measure_order[2],
              g_st.us_order[0], g_st.us_order[1], g_st.us_order[2]);
+
+    /* 同步保存 mode 到 DS_STRATEGY_MODE_PATH，确保重启后恢复正确模式 */
+    {
+        FILE *mf = fopen(DS_STRATEGY_MODE_PATH, "wb");
+        if (mf)
+        {
+            uint8_t raw = (uint8_t)g_st.mode;
+            fwrite(&raw, 1, 1, mf);
+            fclose(mf);
+        }
+    }
+
     calm_strategy_save();
     return 0;
 
@@ -338,36 +350,72 @@ uint16_t calm_strategy_fill_get_rsp(ds_calm_mode_t mode, uint8_t *rsp, uint16_t 
     uint16_t n;
     uint8_t i;
 
-    /* 先加载请求的模式对应的策略文件到内存 */
-    LOG_INFO("strategy get: loading mode=%d\n", mode);
-    calm_strategy_load(mode);
+    /* 加载文件到临时结构，不污染运行态 g_st */
+    calm_strategy_t tmp;
+    {
+        FILE *fp;
+        ds_strategy_file_t f;
+        const char *path = calm_strategy_get_path_by_mode(mode);
+        fp = fopen(path, "rb");
+        if (!fp || fread(&f, sizeof(f), 1, fp) != 1 ||
+            f.magic != DS_STRATEGY_MAGIC || f.version != 1u ||
+            f.measure_cnt == 0 || f.measure_cnt > DS_STRATEGY_MEASURE_MAX ||
+            f.us_cnt == 0 || f.us_cnt > DS_STRATEGY_US_MAX ||
+            f.enabled_mask == 0)
+        {
+            if (fp) fclose(fp);
+            LOG_WARN("strategy get: load failed for mode=%d, use defaults\n", mode);
+            /* 本地默认值，不调 calm_strategy_set_default() 以免污染 g_st */
+            memset(&tmp, 0, sizeof(tmp));
+            tmp.mode = (uint8_t)mode;
+            tmp.enabled_mask = DS_ENABLED_MUSIC | DS_ENABLED_OWNER | DS_ENABLED_US;
+            tmp.measure_cnt = 3;
+            tmp.measure_order[0] = DS_MEASURE_MUSIC;
+            tmp.measure_order[1] = DS_MEASURE_OWNER_VOICE;
+            tmp.measure_order[2] = DS_MEASURE_ULTRASONIC;
+            tmp.us_cnt = 3;
+            tmp.us_order[0] = DS_US_25KHZ;
+            tmp.us_order[1] = DS_US_30KHZ;
+            tmp.us_order[2] = DS_US_DUAL;
+            goto build_rsp;
+        }
+        fclose(fp);
+        tmp.mode = mode;
+        tmp.enabled_mask = f.enabled_mask;
+        tmp.measure_cnt = f.measure_cnt;
+        memcpy(tmp.measure_order, f.measure_order, sizeof(tmp.measure_order));
+        tmp.us_cnt = f.us_cnt;
+        memcpy(tmp.us_order, f.us_order, sizeof(tmp.us_order));
+    }
+
+build_rsp:
 
     /* 总长度 = status(1) + mode(1) + enabledMask(1) + measureCnt(1)
                  + measureOrder(measure_cnt) + usCnt(1) + usOrder(us_cnt) */
-    n = (uint16_t)(5 + g_st.measure_cnt + g_st.us_cnt);
+    n = (uint16_t)(5 + tmp.measure_cnt + tmp.us_cnt);
     if (!rsp || rsp_cap < n)
     {
         LOG_ERROR("strategy get: rsp_cap=%u < n=%u\n", rsp_cap, n);
         return 0;
     }
     rsp[0] = DS_UART_STATUS_OK;
-    rsp[1] = (uint8_t)g_st.mode;
-    rsp[2] = g_st.enabled_mask;
-    rsp[3] = g_st.measure_cnt;
-    for (i = 0; i < g_st.measure_cnt; i++)
+    rsp[1] = (uint8_t)tmp.mode;
+    rsp[2] = tmp.enabled_mask;
+    rsp[3] = tmp.measure_cnt;
+    for (i = 0; i < tmp.measure_cnt; i++)
     {
-        rsp[4 + i] = g_st.measure_order[i];
+        rsp[4 + i] = tmp.measure_order[i];
     }
-    rsp[4 + g_st.measure_cnt] = g_st.us_cnt;
-    for (i = 0; i < g_st.us_cnt; i++)
+    rsp[4 + tmp.measure_cnt] = tmp.us_cnt;
+    for (i = 0; i < tmp.us_cnt; i++)
     {
-        rsp[5 + g_st.measure_cnt + i] = g_st.us_order[i];
+        rsp[5 + tmp.measure_cnt + i] = tmp.us_order[i];
     }
     LOG_INFO("strategy get rsp: mode=%d enabledMask=0x%02x "
              "measureOrder=[%d,%d,%d] usOrder=[%d,%d,%d] n=%u\n",
-             g_st.mode, g_st.enabled_mask,
-             g_st.measure_order[0], g_st.measure_order[1], g_st.measure_order[2],
-             g_st.us_order[0], g_st.us_order[1], g_st.us_order[2], n);
+             tmp.mode, tmp.enabled_mask,
+             tmp.measure_order[0], tmp.measure_order[1], tmp.measure_order[2],
+             tmp.us_order[0], tmp.us_order[1], tmp.us_order[2], n);
     return n;
 
 }

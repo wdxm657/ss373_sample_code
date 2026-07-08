@@ -371,7 +371,6 @@ void comfort_store_set_power(uint8_t on) /* POWER_CTRL 写入 */
     {
         LOG_INFO("state_change: power_on %u -> %u\n", old, g_rt.power_on);
     }
-    led_indicate_state(g_rt.power_on, g_rt.bt_linked);
 }
 
 uint8_t comfort_store_get_power(void)
@@ -431,7 +430,6 @@ void comfort_store_set_bt_linked(uint8_t linked) /* BT_LINK_NOTIFY */
     {
         LOG_INFO("state_change: bt_linked %u -> %u\n", old, g_rt.bt_linked);
     }
-    led_indicate_state(g_rt.power_on, g_rt.bt_linked);
 }
 
 ds_work_state_t comfort_store_get_work_state(void)

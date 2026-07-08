@@ -225,6 +225,7 @@ static void bark_build_session_actions_locked(void)
     }
 
     owner_ok = bark_owner_exists();
+    LOG_DEBUG("owner ok %d", owner_ok);
     for (i = 0; i < st->measure_cnt && n < SESS_ACTIONS_MAX; i++)
     {
         uint8_t m = st->measure_order[i];
@@ -247,17 +248,14 @@ static void bark_build_session_actions_locked(void)
                 g_fsm.actions[n].us_profile = 0;
                 n++;
             }
-            else
-            {
-                bark_append_us_actions_locked(st, &n);
-                us_substituted = 1;
-            }
+            /* 主人录音不存在时直接跳过，不追加超声波 */
         }
         else if (m == DS_MEASURE_ULTRASONIC)
         {
             if (!us_substituted)
             {
                 bark_append_us_actions_locked(st, &n);
+                us_substituted = 1;
             }
         }
     }

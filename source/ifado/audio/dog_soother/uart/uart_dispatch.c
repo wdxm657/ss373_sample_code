@@ -195,11 +195,29 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
         return;
 
     case DS_CMD_BT_LINK_NOTIFY:
-        comfort_store_set_bt_linked(payload_len >= 1 ? payload[0] : 0);
-        LOG_INFO("BT_LINK_NOTIFY linked=%u\n", payload_len >= 1 ? payload[0] : 0);
-        rsp[0] = DS_UART_STATUS_OK;
-        uart_proto_send_rsp(cmd_id, seq, rsp, 1);
+    {
+        uint8_t linked = (payload_len >= 1) ? payload[0] : 0;
+        uint8_t power  = (payload_len >= 2) ? payload[1] : 0xFF;  /* 0xFF=未知 */
+        comfort_store_set_bt_linked(linked);
+        if (power != 0xFF)
+        {
+            uint8_t cur_power = comfort_store_get_power();
+            uint8_t cur_linked = comfort_store_get_bt_linked();
+            if (cur_power != power)
+            {
+                LOG_INFO("BT_LINK_NOTIFY: sync power %u -> %u\n", cur_power, power);
+                bark_control_set_power(power);
+            }
+            if (cur_linked != linked)
+            {
+                LOG_INFO("BT_LINK_NOTIFY: sync linked %u -> %u\n", cur_linked, linked);
+                comfort_store_set_bt_linked(power);
+            }
+        }
+        // rsp[0] = DS_UART_STATUS_OK;
+        // uart_proto_send_rsp(cmd_id, seq, rsp, 1);
         return;
+    }
 
     case DS_CMD_LOG_PULL:
         rsp[0] = DS_UART_STATUS_OK;
