@@ -5,7 +5,7 @@
 #ifndef DS_UART_DEVICE
 #define DS_UART_DEVICE "/dev/ttyS1"
 #endif
-#define DS_UART_BAUDRATE 115200
+#define DS_UART_BAUDRATE 9600
 
 /* --- 用户数据目录与文件路径 --- */
 #ifndef DS_USERDATA_DIR
