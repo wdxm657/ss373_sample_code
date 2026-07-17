@@ -629,6 +629,7 @@ void bark_control_tick(void)
         if (hb_cnt >= 2)
         {
             hb_cnt = 0;
+            LOG_DEBUG("herart beat");
             uart_proto_send_evt(DS_EVT_HEARTBEAT, 0, NULL, 0);
         }
     }

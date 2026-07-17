@@ -1,7 +1,7 @@
 /** @file audio_ao.c @brief MI AO WAV 播放与音量档位 */
 #define LOG_TAG "audio_ao"
 #include "log.h"
-
+#include <stdio.h>
 #include "audio.h"
 #include "audio_ao.h"
 #include "audio_sys.h"
@@ -209,6 +209,10 @@ static void *audio_ao_play_thread(void *arg) /* 跳过 WAV 头后循环 MI_AO_Wr
     LOG_INFO("ao play start: %s\n", path);
 
     /* 播放前拉高 GPIO 14（功放使能） */
+    audio_ao_gpio14_set(1);
+    usleep(1);
+    audio_ao_gpio14_set(0);
+    usleep(1);
     audio_ao_gpio14_set(1);
 
     while (!g_ao_stop_req)
