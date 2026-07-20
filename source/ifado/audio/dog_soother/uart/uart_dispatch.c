@@ -18,13 +18,13 @@
 #include "system_time.h"
 #include <stdio.h>
 
-/* 安抚记录数据库路径（�?app_config.h 中的 DS_COMFORT_DB_PATH�? */
+/* 安抚记录数据库路径（app_config.h 中的 DS_COMFORT_DB_PATH */
 #ifndef DS_COMFORT_DB_PATH
 #define DS_COMFORT_DB_PATH  DS_USERDATA_DIR "/params/comfort_records.bin"
 #endif
 #define DS_COMFORT_DB_BK_PATH  DS_USERDATA_DIR "/params/comfort_records.bin.bk"
 
-static void uart_reply_status(uint8_t seq) /* 0x11�? 字节状�?RSP */
+static void uart_reply_status(uint8_t seq) /* 0x11 字节状态RSP */
 {
     uint8_t payload[16];
     uint16_t len = 0;
@@ -39,7 +39,7 @@ static void uart_reply_status(uint8_t seq) /* 0x11�? 字节状�?RSP */
     uart_proto_send_rsp(DS_CMD_STATUS_GET, seq, payload, len);
 }
 
-/* 安抚会话进行中时禁止的操�?*/
+/* 安抚会话进行中时禁止的操作 */
 static int uart_reject_if_session_active(uint8_t cmd_id, uint8_t seq, uint8_t *rsp)
 {
     if (bark_control_is_session_active())
