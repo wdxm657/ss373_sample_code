@@ -1,6 +1,6 @@
 /**
  * @file uart_dispatch.c
- * @brief MCU REQ 分发到 comfort_store / bark_control / audio / system_time
+ * @brief MCU REQ 分发�?comfort_store / bark_control / audio / system_time
  */
 #define LOG_TAG "uart_dispatch"
 #include "log.h"
@@ -18,13 +18,13 @@
 #include "system_time.h"
 #include <stdio.h>
 
-/* 安抚记录数据库路径（同 app_config.h 中的 DS_COMFORT_DB_PATH）*/
+/* 安抚记录数据库路径（�?app_config.h 中的 DS_COMFORT_DB_PATH�? */
 #ifndef DS_COMFORT_DB_PATH
 #define DS_COMFORT_DB_PATH  DS_USERDATA_DIR "/params/comfort_records.bin"
 #endif
 #define DS_COMFORT_DB_BK_PATH  DS_USERDATA_DIR "/params/comfort_records.bin.bk"
 
-static void uart_reply_status(uint8_t seq) /* 0x11：9 字节状态 RSP */
+static void uart_reply_status(uint8_t seq) /* 0x11�? 字节状�?RSP */
 {
     uint8_t payload[16];
     uint16_t len = 0;
@@ -39,7 +39,7 @@ static void uart_reply_status(uint8_t seq) /* 0x11：9 字节状态 RSP */
     uart_proto_send_rsp(DS_CMD_STATUS_GET, seq, payload, len);
 }
 
-/* 安抚会话进行中时禁止的操作 */
+/* 安抚会话进行中时禁止的操�?*/
 static int uart_reject_if_session_active(uint8_t cmd_id, uint8_t seq, uint8_t *rsp)
 {
     if (bark_control_is_session_active())
@@ -69,7 +69,7 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
         {
             if (payload[0])
             {
-                /* 开机时尝试从备份文件恢复安抚记录 */
+                /* 开机时尝试从备份文件恢复安抚记�?*/
                 FILE *fp_src = fopen(DS_COMFORT_DB_BK_PATH, "rb");
                 if (fp_src)
                 {
@@ -232,7 +232,7 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
             if (cur_linked != linked)
             {
                 LOG_INFO("BT_LINK_NOTIFY: sync linked %u -> %u\n", cur_linked, linked);
-                comfort_store_set_bt_linked(power);
+                comfort_store_set_bt_linked(linked);
             }
         }
         // rsp[0] = DS_UART_STATUS_OK;

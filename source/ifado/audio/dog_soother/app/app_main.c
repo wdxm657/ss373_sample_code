@@ -102,7 +102,7 @@ int app_main_run(int argc, char **argv)
     /* 设置初始 LED 灯色 */
     led_indicate_state(comfort_store_get_power(), comfort_store_get_bt_linked());
 
-    bark_control_post_work_state(0);
+    // bark_control_post_work_state(0);
 
     LOG_INFO("main idle (capture/rec/detect threads running), Ctrl+C to exit\n");
     {
