@@ -14,6 +14,7 @@
 #define DS_RECORD_ENTRY_US_25K      0x04  /* 超声波1（25KHz） */
 #define DS_RECORD_ENTRY_US_30K      0x05  /* 超声波2（30KHz） */
 #define DS_RECORD_ENTRY_US_DUAL     0x06  /* 超声波3（双频） */
+#define DS_RECORD_ENTRY_SNACK       0x07  /* 零食投喂 */
 #define DS_RECORD_ENTRY_SUCCESS     0x10  /* 安抚成功 */
 #define DS_RECORD_ENTRY_FAIL        0x11  /* 安抚失败 */
 
@@ -129,7 +130,7 @@ void comfort_store_discard_record(uint32_t session_id);
 
 /**
  * @brief 将措施类型映射为记录条目类型
- * @param measure     措施类型（DS_MEASURE_MUSIC / OWNER_VOICE / ULTRASONIC）
+ * @param measure     措施类型（DS_MEASURE_MUSIC / OWNER_VOICE / ULTRASONIC / SNACK_FEED）
  * @param us_profile  超声波档位，仅 measure=ULTRASONIC 时有效
  * @return DS_RECORD_ENTRY_* 值，0 表示无效映射
  */

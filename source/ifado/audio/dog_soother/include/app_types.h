@@ -36,6 +36,7 @@ typedef enum
 #define DS_MEASURE_MUSIC 1
 #define DS_MEASURE_OWNER_VOICE 2
 #define DS_MEASURE_ULTRASONIC 3
+#define DS_MEASURE_SNACK_FEED 4
 
 /* 超声波档位 */
 #define DS_US_25KHZ 1
@@ -46,5 +47,7 @@ typedef enum
 #define DS_ENABLED_MUSIC (1u << 0)
 #define DS_ENABLED_OWNER (1u << 1)
 #define DS_ENABLED_US (1u << 2)
+#define DS_ENABLED_SNACK (1u << 3)
+#define DS_ENABLED_ALL (DS_ENABLED_MUSIC | DS_ENABLED_OWNER | DS_ENABLED_US | DS_ENABLED_SNACK)
 
 #endif /* DOG_SOOTHER_APP_TYPES_H_ */

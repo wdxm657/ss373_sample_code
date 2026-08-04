@@ -85,6 +85,10 @@ static int bark_measure_enabled(uint8_t measure, uint8_t enabled_mask)
     {
         return (enabled_mask & DS_ENABLED_US) != 0;
     }
+    if (measure == DS_MEASURE_SNACK_FEED)
+    {
+        return (enabled_mask & DS_ENABLED_SNACK) != 0;
+    }
     return 0;
 }
 
@@ -225,11 +229,15 @@ static void bark_build_session_actions_locked(void)
     }
 
     owner_ok = bark_owner_exists();
-    LOG_DEBUG("owner ok %d", owner_ok);
     for (i = 0; i < st->measure_cnt && n < SESS_ACTIONS_MAX; i++)
     {
         uint8_t m = st->measure_order[i];
+        LOG_DEBUG("measure_order  %d\n", m);
 
+        if (st->mode == DS_CALM_MODE_AUTO && m == DS_MEASURE_SNACK_FEED)
+        {
+            continue;
+        }
         if (!bark_measure_enabled(m, st->enabled_mask))
         {
             continue;
@@ -257,6 +265,12 @@ static void bark_build_session_actions_locked(void)
                 bark_append_us_actions_locked(st, &n);
                 us_substituted = 1;
             }
+        }
+        else if (m == DS_MEASURE_SNACK_FEED)
+        {
+            g_fsm.actions[n].measure = DS_MEASURE_SNACK_FEED;
+            g_fsm.actions[n].us_profile = 0;
+            n++;
         }
     }
     g_fsm.action_cnt = n;
@@ -357,6 +371,10 @@ static void bark_begin_action_locked(void)
         g_fsm.us_emit_end = time(NULL) + DS_CALM_US_EMIT_SEC;
         ultrasonic_emit(act->us_profile, (unsigned int)(DS_CALM_US_EMIT_SEC * 1000));
         LOG_INFO("ultrasonic profile=%u %ds\n", act->us_profile, DS_CALM_US_EMIT_SEC);
+        break;
+    case DS_MEASURE_SNACK_FEED:
+        uart_proto_send_evt(DS_EVT_SNACK_FEED, 0, NULL, 0);
+        g_fsm.acting_busy = 0;
         break;
     default:
         g_fsm.acting_busy = 0;

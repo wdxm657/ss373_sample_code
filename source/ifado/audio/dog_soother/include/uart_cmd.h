@@ -42,4 +42,6 @@
 #define DS_EVT_HEARTBEAT 0x87
 #define DS_EVT_NEW_CALM_RECORD 0x88  /* 安抚记录已保存完成通知 */
 
+#define DS_EVT_SNACK_FEED 0x89  /* SOC requests MCU snack feeding */
+
 #endif /* DOG_SOOTHER_UART_CMD_H_ */

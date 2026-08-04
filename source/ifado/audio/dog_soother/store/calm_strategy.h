@@ -5,7 +5,7 @@
 
 #include "app_types.h"
 
-#define DS_STRATEGY_MEASURE_MAX 3
+#define DS_STRATEGY_MEASURE_MAX 4
 #define DS_STRATEGY_US_MAX 3
 
 typedef struct

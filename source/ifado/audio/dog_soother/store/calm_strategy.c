@@ -25,11 +25,23 @@ typedef struct __attribute__((packed))
     uint8_t us_order[DS_STRATEGY_US_MAX];
 } ds_strategy_file_t;
 
+typedef struct __attribute__((packed))
+{
+    uint32_t magic;
+    uint8_t version;
+    uint8_t mode;
+    uint8_t enabled_mask;
+    uint8_t measure_cnt;
+    uint8_t measure_order[3];
+    uint8_t us_cnt;
+    uint8_t us_order[DS_STRATEGY_US_MAX];
+} ds_strategy_file_v1_t;
+
 static calm_strategy_t g_st;
 
 static int calm_strategy_measure_valid(uint8_t m)
 {
-    return m >= DS_MEASURE_MUSIC && m <= DS_MEASURE_ULTRASONIC;
+    return m >= DS_MEASURE_MUSIC && m <= DS_MEASURE_SNACK_FEED;
 }
 
 static int calm_strategy_us_valid(uint8_t u)
@@ -37,8 +49,117 @@ static int calm_strategy_us_valid(uint8_t u)
     return u >= DS_US_25KHZ && u <= DS_US_DUAL;
 }
 
+static int calm_strategy_has_snack_measure(const uint8_t *order, uint8_t cnt)
+{
+    uint8_t i;
+
+    for (i = 0; i < cnt; i++)
+    {
+        if (order[i] == DS_MEASURE_SNACK_FEED)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int calm_strategy_fields_valid(
+    ds_calm_mode_t mode,
+    uint8_t enabled_mask,
+    uint8_t measure_cnt,
+    const uint8_t *measure_order,
+    uint8_t us_cnt,
+    const uint8_t *us_order)
+{
+    uint8_t i;
+
+    if (mode > DS_CALM_MODE_MANUAL ||
+        enabled_mask == 0 ||
+        (enabled_mask & (uint8_t)~DS_ENABLED_ALL) ||
+        measure_cnt == 0 ||
+        measure_cnt > DS_STRATEGY_MEASURE_MAX ||
+        us_cnt == 0 ||
+        us_cnt > DS_STRATEGY_US_MAX)
+    {
+        return 0;
+    }
+
+    if (mode == DS_CALM_MODE_AUTO &&
+        ((enabled_mask & DS_ENABLED_SNACK) ||
+         calm_strategy_has_snack_measure(measure_order, measure_cnt)))
+    {
+        return 0;
+    }
+
+    for (i = 0; i < measure_cnt; i++)
+    {
+        if (!calm_strategy_measure_valid(measure_order[i]))
+        {
+            return 0;
+        }
+    }
+
+    for (i = 0; i < us_cnt; i++)
+    {
+        if (!calm_strategy_us_valid(us_order[i]))
+        {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+static int calm_strategy_read_file(const char *path, ds_strategy_file_t *out)
+{
+    FILE *fp;
+    uint8_t raw[sizeof(ds_strategy_file_t)];
+    size_t rd;
+
+    if (!path || !out)
+    {
+        return -1;
+    }
+
+    fp = fopen(path, "rb");
+    if (!fp)
+    {
+        return -2;
+    }
+
+    memset(out, 0, sizeof(*out));
+    memset(raw, 0, sizeof(raw));
+    rd = fread(raw, 1, sizeof(raw), fp);
+    fclose(fp);
+
+    if (rd == sizeof(ds_strategy_file_t))
+    {
+        memcpy(out, raw, sizeof(*out));
+        return 0;
+    }
+
+    if (rd == sizeof(ds_strategy_file_v1_t))
+    {
+        ds_strategy_file_v1_t old_f;
+
+        memcpy(&old_f, raw, sizeof(old_f));
+        out->magic = old_f.magic;
+        out->version = old_f.version;
+        out->mode = old_f.mode;
+        out->enabled_mask = old_f.enabled_mask;
+        out->measure_cnt = old_f.measure_cnt;
+        memcpy(out->measure_order, old_f.measure_order, sizeof(old_f.measure_order));
+        out->us_cnt = old_f.us_cnt;
+        memcpy(out->us_order, old_f.us_order, sizeof(out->us_order));
+        return 0;
+    }
+
+    return -3;
+}
+
 static void calm_strategy_set_default(void)
 {
+    memset(&g_st, 0, sizeof(g_st));
     g_st.mode = DS_CALM_MODE_AUTO;
     g_st.enabled_mask = DS_ENABLED_MUSIC | DS_ENABLED_OWNER | DS_ENABLED_US;
     g_st.measure_cnt = 3;
@@ -150,36 +271,25 @@ const calm_strategy_t *calm_strategy_get(void)
 
 int calm_strategy_load(ds_calm_mode_t mode)
 {
-    FILE *fp;
     ds_strategy_file_t f;
     const char *path;
 
     path = calm_strategy_get_path_by_mode(mode);
-    fp = fopen(path, "rb");
-    if (!fp)
+    if (calm_strategy_read_file(path, &f) != 0)
     {
-        return -1;
-    }
-    if (fread(&f, sizeof(f), 1, fp) != 1)
-    {
-        fclose(fp);
         return -2;
     }
-    fclose(fp);
 
     if (f.magic != DS_STRATEGY_MAGIC || f.version != 1u)
     {
         return -3;
     }
-    if (f.measure_cnt == 0 || f.measure_cnt > DS_STRATEGY_MEASURE_MAX)
-    {
-        return -4;
-    }
-    if (f.us_cnt == 0 || f.us_cnt > DS_STRATEGY_US_MAX)
-    {
-        return -5;
-    }
-    if (f.enabled_mask == 0)
+    if (!calm_strategy_fields_valid(mode,
+                                    f.enabled_mask,
+                                    f.measure_cnt,
+                                    f.measure_order,
+                                    f.us_cnt,
+                                    f.us_order))
     {
         return -6;
     }
@@ -193,7 +303,9 @@ int calm_strategy_load(ds_calm_mode_t mode)
     LOG_INFO("us_cnt %d\n", f.us_cnt);
     memcpy(g_st.us_order, f.us_order, sizeof(g_st.us_order));
     LOG_INFO("strategy loaded from %s\n", path);
-    LOG_INFO("measure_order: %d, %d, %d\n", g_st.measure_order[0], g_st.measure_order[1], g_st.measure_order[2]);
+    LOG_INFO("measure_order: %d, %d, %d, %d\n",
+             g_st.measure_order[0], g_st.measure_order[1],
+             g_st.measure_order[2], g_st.measure_order[3]);
     LOG_INFO("us_order: %d, %d, %d\n", g_st.us_order[0], g_st.us_order[1], g_st.us_order[2]);
     return 0;
 }
@@ -226,11 +338,12 @@ int calm_strategy_save(void)
     }
     fclose(fp);
     LOG_INFO("strategy saved mode=%d enabledMask=0x%02x "
-             "measureCnt=%d measureOrder=[%d,%d,%d] "
+             "measureCnt=%d measureOrder=[%d,%d,%d,%d] "
              "usCnt=%d usOrder=[%d,%d,%d] path=%s\n",
              g_st.mode, g_st.enabled_mask,
              g_st.measure_cnt,
-             g_st.measure_order[0], g_st.measure_order[1], g_st.measure_order[2],
+             g_st.measure_order[0], g_st.measure_order[1],
+             g_st.measure_order[2], g_st.measure_order[3],
              g_st.us_cnt,
              g_st.us_order[0], g_st.us_order[1], g_st.us_order[2],
              calm_strategy_get_path_by_mode(g_st.mode));
@@ -260,7 +373,10 @@ int calm_strategy_set_from_uart_payload(const uint8_t *payload, uint16_t len)
     }
     LOG_DEBUG("  payload[0]=mode=%u [1]=enabledMask=0x%02x [2]=measureCnt=%u\n",
               payload[0], payload[1], payload[2]);
-    if (payload[0] > DS_CALM_MODE_MANUAL || payload[1] == 0)
+    if (payload[0] > DS_CALM_MODE_MANUAL ||
+        payload[1] == 0 ||
+        (payload[1] & (uint8_t)~DS_ENABLED_ALL) ||
+        (payload[0] == DS_CALM_MODE_AUTO && (payload[1] & DS_ENABLED_SNACK)))
     {
         LOG_ERROR("strategy set: invalid mode=%u or enabledMask=0x%02x\n",
                   payload[0], payload[1]);
@@ -279,18 +395,19 @@ int calm_strategy_set_from_uart_payload(const uint8_t *payload, uint16_t len)
                   (uint16_t)(idx + m_cnt + 1), len);
         return -4;
     }
-    LOG_DEBUG("  measureOrder:");
+    LOG_DEBUG("  measureOrder:\n");
     for (i = 0; i < m_cnt; i++)
     {
-        LOG_DEBUG(" %u", payload[idx + i]);
-        if (!calm_strategy_measure_valid(payload[idx + i]))
+        LOG_DEBUG(" %u\n", payload[idx + i]);
+        if (!calm_strategy_measure_valid(payload[idx + i]) ||
+            (payload[0] == DS_CALM_MODE_AUTO && payload[idx + i] == DS_MEASURE_SNACK_FEED))
         {
             LOG_ERROR(" -> invalid measure[%u]=%u\n", i, payload[idx + i]);
             return -5;
         }
     }
     u_cnt = payload[idx + m_cnt];
-    LOG_DEBUG("  usCnt=%u", u_cnt);
+    LOG_DEBUG("  usCnt=%u\n", u_cnt);
     if (u_cnt == 0 || u_cnt > DS_STRATEGY_US_MAX)
     {
         LOG_ERROR("strategy set: invalid usCnt=%u\n", u_cnt);
@@ -302,10 +419,10 @@ int calm_strategy_set_from_uart_payload(const uint8_t *payload, uint16_t len)
                   (uint16_t)(idx + m_cnt + 1 + u_cnt), len);
         return -7;
     }
-    LOG_DEBUG("  usOrder:");
+    LOG_DEBUG("  usOrder:\n");
     for (i = 0; i < u_cnt; i++)
     {
-        LOG_DEBUG(" %u", payload[idx + m_cnt + 1 + i]);
+        LOG_DEBUG(" %u\n", payload[idx + m_cnt + 1 + i]);
         if (!calm_strategy_us_valid(payload[idx + m_cnt + 1 + i]))
         {
             LOG_ERROR(" -> invalid us[%u]=%u\n", i, payload[idx + m_cnt + 1 + i]);
@@ -317,16 +434,17 @@ int calm_strategy_set_from_uart_payload(const uint8_t *payload, uint16_t len)
     g_st.mode = (ds_calm_mode_t)payload[0];
     g_st.enabled_mask = payload[1];
     g_st.measure_cnt = m_cnt;
-    memset(g_st.measure_order, 0, 3);
+    memset(g_st.measure_order, 0, sizeof(g_st.measure_order));
     memcpy(g_st.measure_order, payload + idx, m_cnt);
     idx = (uint16_t)(idx + m_cnt + 1);
     g_st.us_cnt = u_cnt;
-    memset(g_st.us_order, 0, 3);
+    memset(g_st.us_order, 0, sizeof(g_st.us_order));
     memcpy(g_st.us_order, payload + idx, u_cnt);
     LOG_INFO("strategy set ok: mode=%d enabledMask=0x%02x "
-             "measureOrder=[%d,%d,%d] usOrder=[%d,%d,%d]\n",
+             "measureOrder=[%d,%d,%d,%d] usOrder=[%d,%d,%d]\n",
              g_st.mode, g_st.enabled_mask,
-             g_st.measure_order[0], g_st.measure_order[1], g_st.measure_order[2],
+             g_st.measure_order[0], g_st.measure_order[1],
+             g_st.measure_order[2], g_st.measure_order[3],
              g_st.us_order[0], g_st.us_order[1], g_st.us_order[2]);
 
     /* 同步保存 mode 到 DS_STRATEGY_MODE_PATH，确保重启后恢复正确模式 */
@@ -353,17 +471,17 @@ uint16_t calm_strategy_fill_get_rsp(ds_calm_mode_t mode, uint8_t *rsp, uint16_t 
     /* 加载文件到临时结构，不污染运行态 g_st */
     calm_strategy_t tmp;
     {
-        FILE *fp;
         ds_strategy_file_t f;
         const char *path = calm_strategy_get_path_by_mode(mode);
-        fp = fopen(path, "rb");
-        if (!fp || fread(&f, sizeof(f), 1, fp) != 1 ||
+        if (calm_strategy_read_file(path, &f) != 0 ||
             f.magic != DS_STRATEGY_MAGIC || f.version != 1u ||
-            f.measure_cnt == 0 || f.measure_cnt > DS_STRATEGY_MEASURE_MAX ||
-            f.us_cnt == 0 || f.us_cnt > DS_STRATEGY_US_MAX ||
-            f.enabled_mask == 0)
+            !calm_strategy_fields_valid(mode,
+                                        f.enabled_mask,
+                                        f.measure_cnt,
+                                        f.measure_order,
+                                        f.us_cnt,
+                                        f.us_order))
         {
-            if (fp) fclose(fp);
             LOG_WARN("strategy get: load failed for mode=%d, use defaults\n", mode);
             /* 本地默认值，不调 calm_strategy_set_default() 以免污染 g_st */
             memset(&tmp, 0, sizeof(tmp));
@@ -379,7 +497,6 @@ uint16_t calm_strategy_fill_get_rsp(ds_calm_mode_t mode, uint8_t *rsp, uint16_t 
             tmp.us_order[2] = DS_US_DUAL;
             goto build_rsp;
         }
-        fclose(fp);
         tmp.mode = mode;
         tmp.enabled_mask = f.enabled_mask;
         tmp.measure_cnt = f.measure_cnt;
@@ -412,9 +529,10 @@ build_rsp:
         rsp[5 + tmp.measure_cnt + i] = tmp.us_order[i];
     }
     LOG_INFO("strategy get rsp: mode=%d enabledMask=0x%02x "
-             "measureOrder=[%d,%d,%d] usOrder=[%d,%d,%d] n=%u\n",
+             "measureOrder=[%d,%d,%d,%d] usOrder=[%d,%d,%d] n=%u\n",
              tmp.mode, tmp.enabled_mask,
-             tmp.measure_order[0], tmp.measure_order[1], tmp.measure_order[2],
+             tmp.measure_order[0], tmp.measure_order[1],
+             tmp.measure_order[2], tmp.measure_order[3],
              tmp.us_order[0], tmp.us_order[1], tmp.us_order[2], n);
     return n;
 

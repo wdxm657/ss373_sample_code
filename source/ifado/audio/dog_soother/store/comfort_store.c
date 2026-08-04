@@ -218,7 +218,7 @@ static ds_session_record_t *comfort_store_find_record(uint32_t session_id)
     for (i = 0; i < g_record_cnt; i++)
     {
         uint8_t idx = (g_record_head + i) % DS_RECORD_MAX;
-        LOG_DEBUG("idx: %d", idx);
+        LOG_DEBUG("idx: %d\n", idx);
         if (g_records[idx].session_id == session_id)
         {
             return &g_records[idx];
@@ -245,6 +245,10 @@ uint8_t comfort_store_measure_to_entry_type(uint8_t measure, uint8_t us_profile)
             return DS_RECORD_ENTRY_US_30K;
         if (us_profile == DS_US_DUAL)
             return DS_RECORD_ENTRY_US_DUAL;
+    }
+    if (measure == DS_MEASURE_SNACK_FEED)
+    {
+        return DS_RECORD_ENTRY_SNACK;
     }
     return 0;
 }
@@ -443,7 +447,7 @@ uint8_t comfort_store_has_records(void)
 
             if (entry.type == DS_RECORD_ENTRY_BARK)
                 has_bark = 1;
-            else if (entry.type >= DS_RECORD_ENTRY_MUSIC && entry.type <= DS_RECORD_ENTRY_US_DUAL)
+            else if (entry.type >= DS_RECORD_ENTRY_MUSIC && entry.type <= DS_RECORD_ENTRY_SNACK)
                 has_measure = 1;
             else if (entry.type == DS_RECORD_ENTRY_SUCCESS || entry.type == DS_RECORD_ENTRY_FAIL)
                 has_result = 1;
