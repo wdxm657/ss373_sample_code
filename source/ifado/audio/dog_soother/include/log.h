@@ -17,18 +17,18 @@
 #define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 
 #define LOG_ERROR(fmt, ...)                                    \
-    printf(COLOR_RED "[ERROR] [%s:%d]: " fmt COLOR_RESET "\n", \
+    printf(COLOR_RED "[ERROR] [%s:%d]: " fmt COLOR_RESET , \
            __FILENAME__, __LINE__, ##__VA_ARGS__)
 
 #define LOG_INFO(fmt, ...)                                      \
-    printf(COLOR_GREEN "[INFO] [%s:%d]: " fmt COLOR_RESET "\n", \
+    printf(COLOR_GREEN "[INFO] [%s:%d]: " fmt COLOR_RESET , \
            __FILENAME__, __LINE__, ##__VA_ARGS__)
 
 #define LOG_DEBUG(fmt, ...)                                     \
-    printf(COLOR_CYAN "[DEBUG] [%s:%d]: " fmt COLOR_RESET "\n", \
+    printf(COLOR_CYAN "[DEBUG] [%s:%d]: " fmt COLOR_RESET , \
            __FILENAME__, __LINE__, ##__VA_ARGS__)
 
 #define LOG_WARN(fmt, ...)                                     \
-    printf(COLOR_YELLOW "[WARN] [%s:%d]: " fmt COLOR_RESET "\n", \
+    printf(COLOR_YELLOW "[WARN] [%s:%d]: " fmt COLOR_RESET  , \
            __FILENAME__, __LINE__, ##__VA_ARGS__)
 #endif
