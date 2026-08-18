@@ -64,6 +64,7 @@ typedef struct
 } bark_fsm_t;
 
 static uint8_t g_power_on = 1;
+static uint8_t g_reward_enabled = 0; /* 零食奖励功能开关（MCU 同步，安抚成功时判定是否额外投喂） */
 static bark_fsm_t g_fsm;
 static pthread_mutex_t g_fsm_mu = PTHREAD_MUTEX_INITIALIZER;
 static uint8_t g_next_session_id = 1;
@@ -181,9 +182,9 @@ static void bark_post_measure_evt(uint32_t session_id, uint8_t step, uint8_t mea
     LOG_INFO("EVT measure step=%u type=%u sub=%u\n", step, measure, sub);
 }
 
-static void bark_post_session_result_evt(uint32_t session_id, uint8_t result, uint8_t ok_measure, uint8_t ok_sub)
+static void bark_post_session_result_evt(uint32_t session_id, uint8_t result, uint8_t ok_measure, uint8_t ok_sub, uint8_t reward)
 {
-    uint8_t payload[11];
+    uint8_t payload[12];
     uint32_t end_ts = (uint32_t)time(NULL);
 
     payload[0] = (uint8_t)(session_id & 0xFF);
@@ -197,8 +198,9 @@ static void bark_post_session_result_evt(uint32_t session_id, uint8_t result, ui
     payload[8] = (uint8_t)((end_ts >> 24) & 0xFF);
     payload[9] = ok_measure;
     payload[10] = ok_sub;
+    payload[11] = reward; /* 1=本次成功附带零食奖励投喂 */
     uart_proto_send_evt(DS_EVT_SESSION_RESULT, 0, payload, sizeof(payload));
-    LOG_INFO("EVT session result id=%u result=%u\n", session_id, result);
+    LOG_INFO("EVT session result id=%u result=%u reward=%u\n", session_id, result, reward);
 }
 
 static void bark_append_us_actions_locked(const calm_strategy_t *st, uint8_t *n)
@@ -282,6 +284,7 @@ static void bark_enter_rest_locked(uint8_t success)
     uint8_t ok_m = g_fsm.last_ok_measure;
     uint8_t ok_s = g_fsm.last_ok_us_sub;
     uint32_t now_ts;
+    uint8_t reward = 0;
 
     if (success)
     {
@@ -289,10 +292,20 @@ static void bark_enter_rest_locked(uint8_t success)
         bark_sync_store_from_strategy();
     }
 
-    now_ts = (uint32_t)time(NULL);
-    comfort_store_record_finish(g_fsm.session_id, success, now_ts);
+    /* 零食奖励：安抚成功 + 奖励功能开启 + 最后措施不是投喂零食 → 额外投喂一次。
+     * 该投喂不属于安抚流程措施（不追加记录条目），仅记录 reward 标记。 */
+    if (success && g_reward_enabled && ok_m != DS_MEASURE_SNACK_FEED)
+    {
+        reward = 1;
+        LOG_INFO("snack reward: session %u success, last_measure=%u -> feed once\n",
+                 g_fsm.session_id, ok_m);
+        uart_proto_send_evt(DS_EVT_SNACK_FEED, 0, NULL, 0);
+    }
 
-    bark_post_session_result_evt(g_fsm.session_id, success ? 1u : 0u, ok_m, ok_s);
+    now_ts = (uint32_t)time(NULL);
+    comfort_store_record_finish(g_fsm.session_id, success, now_ts, reward);
+
+    bark_post_session_result_evt(g_fsm.session_id, success ? 1u : 0u, ok_m, ok_s, reward);
     bark_set_work_state(DS_WORK_RESTING, success ? 3u : 4u);
     bark_detect_set_active(0);
     g_fsm.in_session = 0;
@@ -609,6 +622,16 @@ void bark_control_set_power(uint8_t on)
         g_fsm.in_session = 0;
     }
     pthread_mutex_unlock(&g_fsm_mu);
+}
+
+void bark_control_set_reward_enabled(uint8_t on)
+{
+    uint8_t old = g_reward_enabled;
+    g_reward_enabled = on ? 1 : 0;
+    if (old != g_reward_enabled)
+    {
+        LOG_INFO("reward_enabled %u -> %u\n", old, g_reward_enabled);
+    }
 }
 
 void bark_control_post_work_state(uint8_t reason)

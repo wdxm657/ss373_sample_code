@@ -23,6 +23,7 @@
 #define DS_CMD_CALM_MODE_SET 0x30
 #define DS_CMD_CALM_STRATEGY_SET 0x31
 #define DS_CMD_TIME_SET 0x32
+#define DS_CMD_REWARD_FLAG_NOTIFY 0x34  /* MCU 下发零食奖励功能开关 payload=[enabled(1)] */
 #define DS_CMD_CALM_STRATEGY_GET 0x33
 #define DS_CMD_LOG_PULL 0x40
 #define DS_CMD_CALM_RECORD_GET 0x41

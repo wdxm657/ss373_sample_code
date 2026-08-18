@@ -40,6 +40,7 @@ typedef struct
     uint32_t start_ts;                     /* 首次识别时间戳 */
     uint32_t end_ts;                       /* 结束时间戳 */
     uint8_t  entry_cnt;                    /* 有效条目数 */
+    uint8_t  reward;                       /* 结果奖励标记: 1=本次成功附带零食投喂奖励 */
     ds_record_entry_t entries[DS_RECORD_ENTRY_MAX];
 } ds_session_record_t;
 #pragma pack(pop)
@@ -119,8 +120,9 @@ void comfort_store_record_append_measure(uint32_t session_id, uint8_t type, uint
  * @param session_id  会话 ID
  * @param success     1=成功 0=失败
  * @param end_ts      结束时间戳
+ * @param reward      1=本次成功附带零食投喂奖励（result 记录字段，非流程措施）
  */
-void comfort_store_record_finish(uint32_t session_id, uint8_t success, uint32_t end_ts);
+void comfort_store_record_finish(uint32_t session_id, uint8_t success, uint32_t end_ts, uint8_t reward);
 
 /**
  * @brief 丢弃一条未完成的安抚记录（从内存缓存移除，不写入文件）

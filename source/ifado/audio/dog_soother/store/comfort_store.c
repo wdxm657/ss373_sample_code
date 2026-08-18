@@ -17,7 +17,8 @@
 
 /* ========== 安抚记录持久化文件格式 ========== */
 #define DS_RECORD_FILE_MAGIC 0x44524344u /* 'DCRD' little-endian */
-#define DS_RECORD_FILE_VER 1
+/* v2: 记录头增加 reward(1B) 结果奖励标记（v1 文件将被忽略，重新开始记录） */
+#define DS_RECORD_FILE_VER 2
 
 #pragma pack(push, 1)
 typedef struct
@@ -34,6 +35,7 @@ typedef struct
     uint32_t start_ts;
     uint32_t end_ts;
     uint8_t entry_cnt;
+    uint8_t reward;   /* 1=本次成功附带零食投喂奖励 */
     /* ds_record_entry_t entries[entry_cnt] 紧随其后 */
 } ds_record_file_entry_hdr_t;
 #pragma pack(pop)
@@ -134,6 +136,7 @@ static int comfort_store_load_records(void)
         rec->start_ts = fhdr.start_ts;
         rec->end_ts = fhdr.end_ts;
         rec->entry_cnt = fhdr.entry_cnt;
+        rec->reward = fhdr.reward;
         for (j = 0; j < fhdr.entry_cnt; j++)
         {
             if (fread(&rec->entries[j], sizeof(ds_record_entry_t), 1, fp) != 1)
@@ -189,6 +192,7 @@ static int comfort_store_save_records(void)
         fhdr.start_ts = rec->start_ts;
         fhdr.end_ts = rec->end_ts;
         fhdr.entry_cnt = rec->entry_cnt;
+        fhdr.reward = rec->reward;
         if (fwrite(&fhdr, sizeof(fhdr), 1, fp) != 1)
         {
             fclose(fp);
@@ -303,7 +307,7 @@ void comfort_store_record_append_measure(uint32_t session_id, uint8_t type, uint
     LOG_DEBUG("record append session=%u type=0x%02x ts=%u\n", session_id, type, ts);
 }
 
-void comfort_store_record_finish(uint32_t session_id, uint8_t success, uint32_t end_ts)
+void comfort_store_record_finish(uint32_t session_id, uint8_t success, uint32_t end_ts, uint8_t reward)
 {
     ds_session_record_t *rec = comfort_store_find_record(session_id);
 
@@ -314,6 +318,7 @@ void comfort_store_record_finish(uint32_t session_id, uint8_t success, uint32_t 
     }
 
     rec->end_ts = end_ts;
+    rec->reward = reward ? 1 : 0;
 
     /* 追加结果条目 */
     if (rec->entry_cnt < DS_RECORD_ENTRY_MAX)
@@ -325,8 +330,8 @@ void comfort_store_record_finish(uint32_t session_id, uint8_t success, uint32_t 
 
     /* 持久化到文件 */
     comfort_store_save_records();
-    LOG_INFO("record finish session=%u success=%u entries=%u\n",
-             session_id, success, rec->entry_cnt);
+    LOG_INFO("record finish session=%u success=%u reward=%u entries=%u\n",
+             session_id, success, rec->reward, rec->entry_cnt);
 }
 
 void comfort_store_discard_record(uint32_t session_id)
@@ -554,10 +559,11 @@ uint16_t comfort_store_pull_records(
 
     REQ payload: []（可选 payload 被忽略，始终返回最旧记录）
 
-    RSP payload: [status(1), session_id(1), entryCount(1), entries...]
+    RSP payload: [status(1), session_id(1), entryCount(1), reward(1), entries...]
       status          - DS_UART_STATUS_OK 或 DS_UART_STATUS_NOT_FOUND
       session_id      - 本条记录的会话 ID（1 字节，用于后续按 ID 删除）
       entryCount      - 本条记录的 entry 数
+      reward          - 1=本次安抚成功附带零食投喂奖励（结果记录字段）
       entries         - entryCount 条 entry，每条 [type(1B), ts(4B)] = 5B
 
     无记录时返回 [DS_UART_STATUS_OK, 0, 0]。
@@ -612,7 +618,7 @@ uint16_t comfort_store_pull_records(
 
     entry_cnt = (fhdr.entry_cnt <= DS_RECORD_ENTRY_MAX) ? fhdr.entry_cnt : 0;
     {
-        uint16_t need = (uint16_t)(3 + entry_cnt * 5);  /* status(1)+session_id(1)+entryCnt(1)+entries */
+        uint16_t need = (uint16_t)(4 + entry_cnt * 5);  /* status(1)+session_id(1)+entryCnt(1)+reward(1)+entries */
         if (need > rsp_cap || entry_cnt == 0)
         {
             fclose(fp);
@@ -623,8 +629,9 @@ uint16_t comfort_store_pull_records(
         rsp[0] = DS_UART_STATUS_OK;
         rsp[1] = (uint8_t)(fhdr.session_id & 0xFF);  /* session_id truncate to 1 byte */
         rsp[2] = entry_cnt;
+        rsp[3] = fhdr.reward;
 
-        pos = 3;
+        pos = 4;
         for (i = 0; i < entry_cnt; i++)
         {
             ds_record_entry_t entry;

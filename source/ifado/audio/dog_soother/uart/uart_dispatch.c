@@ -176,6 +176,13 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
         uart_proto_send_rsp(cmd_id, seq, rsp, rsp_len);
         return;
 
+    case DS_CMD_REWARD_FLAG_NOTIFY:
+        LOG_INFO("REWARD_FLAG_NOTIFY req enabled=%u\n", payload_len >= 1 ? payload[0] : 0);
+        bark_control_set_reward_enabled(payload_len >= 1 ? payload[0] : 0);
+        /* 与 DS_CMD_BT_LINK_NOTIFY(0x60) 一致：MCU 每秒兜底下发，不回 RSP，
+         * 否则 MCU 侧无匹配请求会打印 unmatched 日志。 */
+        return;
+
     case DS_CMD_CALM_RECORD_GET:
         LOG_INFO("CALM_RECORD_GET req\n");
         rsp_len = comfort_store_pull_records(payload, payload_len, rsp, sizeof(rsp));
