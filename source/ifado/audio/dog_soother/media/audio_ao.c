@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 static int g_ao_ready;
@@ -34,6 +35,34 @@ static pthread_mutex_t g_ao_play_mutex = PTHREAD_MUTEX_INITIALIZER;
 static char g_ao_play_path[256];
 static int g_ao_notify_calm_done;
 static uint8_t g_ao_play_audio_index;
+
+static uint64_t audio_ao_elapsed_ns(const struct timespec *start, const struct timespec *now)
+{
+    int64_t sec = (int64_t)now->tv_sec - (int64_t)start->tv_sec;
+    int64_t nsec = (int64_t)now->tv_nsec - (int64_t)start->tv_nsec;
+    return (uint64_t)(sec * 1000000000LL + nsec);
+}
+
+static void audio_ao_wait_for_drain(uint64_t submitted_bytes, uint32_t bytes_per_sec,
+                                    const struct timespec *play_start)
+{
+    if (bytes_per_sec == 0 || submitted_bytes == 0)
+    {
+        return;
+    }
+
+    uint64_t duration_ns = submitted_bytes * 1000000000ULL / bytes_per_sec;
+    struct timespec now;
+    while (!g_ao_stop_req)
+    {
+        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0 ||
+            audio_ao_elapsed_ns(play_start, &now) >= duration_ns + 100000000ULL)
+        {
+            break;
+        }
+        usleep(20000);
+    }
+}
 
 static int audio_ao_stop_locked(void)
 {
@@ -239,6 +268,8 @@ static void *audio_ao_play_thread(void *arg) /* 跳过 WAV 头后循环 MI_AO_Wr
     int notify_calm_done = g_ao_notify_calm_done;
     uint8_t audio_index = g_ao_play_audio_index;
     int completed = 0;
+    uint64_t submitted_bytes = 0;
+    struct timespec play_start = {0, 0};
     const char *path = g_ao_play_path;
     int fd = open(path, O_RDONLY);
     if (fd < 0)
@@ -274,13 +305,23 @@ static void *audio_ao_play_thread(void *arg) /* 跳过 WAV 头后循环 MI_AO_Wr
             completed = (n == 0);
             break;
         }
+        if (submitted_bytes == 0)
+        {
+            clock_gettime(CLOCK_MONOTONIC, &play_start);
+        }
         MI_S32 ret = MI_AO_Write(g_ao_dev, chunk, (MI_U32)n, 0, -1);
         if (ret != MI_SUCCESS)
         {
             LOG_ERROR("MI_AO_Write failed 0x%x\n", ret);
             break;
         }
+        submitted_bytes += (uint64_t)n;
         g_ao_has_output = 1;
+    }
+
+    if (completed && !g_ao_stop_req)
+    {
+        audio_ao_wait_for_drain(submitted_bytes, hdr.wave.dwAvgBytesPerSec, &play_start);
     }
 
     /* 播放完成或中断后拉低 GPIO 14（功放关闭） */
