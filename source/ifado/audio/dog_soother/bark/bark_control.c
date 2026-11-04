@@ -789,7 +789,7 @@ void bark_control_tick(void)
 
 uint8_t bark_control_is_session_active(void)
 {
-    return g_fsm.in_session;
+    return g_fsm.in_session || g_power_on;
 }
 
 uint16_t bark_control_set_mode(

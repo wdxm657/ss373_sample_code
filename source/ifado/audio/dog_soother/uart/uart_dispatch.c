@@ -42,6 +42,7 @@ static void uart_reply_status(uint8_t seq) /* 0x11 字节状态RSP */
 /* 安抚会话进行中时禁止的操作 */
 static int uart_reject_if_session_active(uint8_t cmd_id, uint8_t seq, uint8_t *rsp)
 {
+    // 开机时直接reject掉就可以了
     if (bark_control_is_session_active())
     {
         LOG_INFO("REJECT cmd=0x%02x: session active\n", cmd_id);
@@ -202,6 +203,7 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
         return;
 
     case DS_CMD_CALM_MUSIC_PLAY:
+        if (uart_reject_if_session_active(cmd_id, seq, rsp)) return;
         LOG_INFO("CALM_MUSIC_PLAY req path=%s\n", bark_control_get_calm_music_path());
         if (audio_ao_play_calm_wav_file(bark_control_get_calm_music_path(),
                                         bark_control_get_calm_music_index()) == 0)
@@ -217,6 +219,7 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
         return;
 
     case DS_CMD_CALM_MUSIC_PLAY_STOP:
+        if (uart_reject_if_session_active(cmd_id, seq, rsp)) return;
         LOG_INFO("CALM_MUSIC_PLAY_STOP req\n");
         audio_ao_stop();
         rsp[0] = DS_UART_STATUS_OK;
@@ -225,7 +228,6 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
 
     case DS_CMD_CALM_MUSIC_SELECT:
     {
-        audio_ao_stop();
         int set_ret = 0;
         uint8_t index;
         if (payload_len > 1 || (payload_len == 1 && !payload))
@@ -238,6 +240,7 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
             if (payload_len == 1)
             {
                 if (uart_reject_if_session_active(cmd_id, seq, rsp)) return;
+                audio_ao_stop();
                 set_ret = bark_control_set_calm_music_index(payload[0]);
             }
             if (set_ret == 0)
