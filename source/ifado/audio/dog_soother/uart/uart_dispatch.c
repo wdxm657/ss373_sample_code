@@ -202,8 +202,9 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
         return;
 
     case DS_CMD_CALM_MUSIC_PLAY:
-        LOG_INFO("CALM_MUSIC_PLAY req\n");
-        if (audio_ao_play_wav_file(DS_CALM_MUSIC_PATH) == 0)
+        LOG_INFO("CALM_MUSIC_PLAY req path=%s\n", bark_control_get_calm_music_path());
+        if (audio_ao_play_calm_wav_file(bark_control_get_calm_music_path(),
+                                        bark_control_get_calm_music_index()) == 0)
         {
             rsp[0] = DS_UART_STATUS_OK;
         }
@@ -221,6 +222,45 @@ static void uart_on_req(uint8_t cmd_id, uint8_t seq, const uint8_t *payload, uin
         rsp[0] = DS_UART_STATUS_OK;
         uart_proto_send_rsp(cmd_id, seq, rsp, 1);
         return;
+
+    case DS_CMD_CALM_MUSIC_SELECT:
+    {
+        audio_ao_stop();
+        int set_ret = 0;
+        uint8_t index;
+        if (payload_len > 1 || (payload_len == 1 && !payload))
+        {
+            rsp[0] = DS_UART_STATUS_PARAM_ERROR;
+            rsp[1] = bark_control_get_calm_music_index();
+        }
+        else
+        {
+            if (payload_len == 1)
+            {
+                if (uart_reject_if_session_active(cmd_id, seq, rsp)) return;
+                set_ret = bark_control_set_calm_music_index(payload[0]);
+            }
+            if (set_ret == 0)
+            {
+                index = bark_control_get_calm_music_index();
+                if (payload_len == 1)
+                {
+                    LOG_INFO("CALM_MUSIC_SELECT index=%u path=%s\n",
+                             index, bark_control_get_calm_music_path());
+                }
+                rsp[0] = DS_UART_STATUS_OK;
+                rsp[1] = index;
+            }
+            else
+            {
+                rsp[0] = (set_ret == -1)
+                    ? DS_UART_STATUS_PARAM_ERROR : DS_UART_STATUS_INTERNAL_ERROR;
+                rsp[1] = bark_control_get_calm_music_index();
+            }
+        }
+        uart_proto_send_rsp(cmd_id, seq, rsp, 2);
+        return;
+    }
 
     case DS_CMD_BT_LINK_NOTIFY:
     {

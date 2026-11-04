@@ -11,6 +11,10 @@ void bark_control_set_power(uint8_t on);
 /* MCU 同步零食奖励功能开关（0=关 1=开），奖励投喂在安抚成功时由状态机判定 */
 void bark_control_set_reward_enabled(uint8_t on);
 
+int bark_control_set_calm_music_index(uint8_t index);
+uint8_t bark_control_get_calm_music_index(void);
+const char *bark_control_get_calm_music_path(void);
+
 void bark_control_post_work_state(uint8_t reason);
 
 /* 主循环每秒调用：监听窗、措施轮询、休息倒计时 */

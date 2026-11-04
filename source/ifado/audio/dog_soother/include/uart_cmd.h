@@ -20,6 +20,7 @@
 #define DS_CMD_OWNER_REC_SAVE  0x26
 #define DS_CMD_CALM_MUSIC_PLAY 0x27
 #define DS_CMD_CALM_MUSIC_PLAY_STOP 0x28
+#define DS_CMD_CALM_MUSIC_SELECT 0x29 /* payload: index 0=calm1.wav, 1=calm2.wav */
 #define DS_CMD_CALM_MODE_SET 0x30
 #define DS_CMD_CALM_STRATEGY_SET 0x31
 #define DS_CMD_TIME_SET 0x32
@@ -44,5 +45,6 @@
 #define DS_EVT_NEW_CALM_RECORD 0x88  /* 安抚记录已保存完成通知 */
 
 #define DS_EVT_SNACK_FEED 0x89  /* SOC requests MCU snack feeding */
+#define DS_EVT_CALM_MUSIC_DONE 0x8A /* 安抚音频自然播放结束，payload: audioIndex */
 
 #endif /* DOG_SOOTHER_UART_CMD_H_ */

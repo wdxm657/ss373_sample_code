@@ -65,12 +65,81 @@ typedef struct
 
 static uint8_t g_power_on = 1;
 static uint8_t g_reward_enabled = 0; /* 零食奖励功能开关（MCU 同步，安抚成功时判定是否额外投喂） */
+static volatile uint8_t g_calm_music_index;
 static bark_fsm_t g_fsm;
 static pthread_mutex_t g_fsm_mu = PTHREAD_MUTEX_INITIALIZER;
 static uint8_t g_next_session_id = 1;
 
 static void bark_start_session_locked(uint32_t bark_ts);
 static void bark_begin_action_locked(void);
+
+const char *bark_control_get_calm_music_path(void)
+{
+    return g_calm_music_index == 0 ? DS_CALM_MUSIC_1_PATH : DS_CALM_MUSIC_2_PATH;
+}
+
+uint8_t bark_control_get_calm_music_index(void)
+{
+    return g_calm_music_index;
+}
+
+static void bark_load_calm_music_index(void)
+{
+    FILE *fp = fopen(DS_CALM_MUSIC_INDEX_PATH, "rb");
+    uint8_t index;
+
+    if (!fp)
+    {
+        g_calm_music_index = 0;
+        return;
+    }
+
+    if (fread(&index, 1, 1, fp) == 1 && fgetc(fp) == EOF &&
+        !ferror(fp) && index <= 1)
+    {
+        g_calm_music_index = index;
+        LOG_INFO("loaded calm music index=%u\n", index);
+    }
+    else
+    {
+        g_calm_music_index = 0;
+        LOG_ERROR("invalid calm music index file, using default\n");
+    }
+    fclose(fp);
+}
+
+int bark_control_set_calm_music_index(uint8_t index)
+{
+    FILE *fp;
+    int save_ok = 1;
+
+    if (index > 1)
+    {
+        return -1;
+    }
+
+    fp = fopen(DS_CALM_MUSIC_INDEX_TMP_PATH, "wb");
+    if (!fp)
+    {
+        return -2;
+    }
+    if (fwrite(&index, 1, 1, fp) != 1 || fflush(fp) != 0 || fsync(fileno(fp)) != 0)
+    {
+        save_ok = 0;
+    }
+    if (fclose(fp) != 0)
+    {
+        save_ok = 0;
+    }
+    if (!save_ok || rename(DS_CALM_MUSIC_INDEX_TMP_PATH, DS_CALM_MUSIC_INDEX_PATH) != 0)
+    {
+        unlink(DS_CALM_MUSIC_INDEX_TMP_PATH);
+        return -2;
+    }
+
+    g_calm_music_index = index;
+    return 0;
+}
 
 static int bark_measure_enabled(uint8_t measure, uint8_t enabled_mask)
 {
@@ -359,14 +428,15 @@ static void bark_begin_action_locked(void)
     switch (act->measure)
     {
     case DS_MEASURE_MUSIC:
-        if (audio_ao_play_wav_file(DS_CALM_MUSIC_PATH) != 0)
+        if (audio_ao_play_calm_wav_file(bark_control_get_calm_music_path(),
+                                        bark_control_get_calm_music_index()) != 0)
         {
-            LOG_ERROR("calm music play failed: %s\n", DS_CALM_MUSIC_PATH);
+            LOG_ERROR("calm music play failed: %s\n", bark_control_get_calm_music_path());
             g_fsm.acting_busy = 0;
         }
         else
         {
-            LOG_INFO("calm music play %s\n", DS_CALM_MUSIC_PATH);
+            LOG_INFO("calm music play %s\n", bark_control_get_calm_music_path());
         }
         break;
     case DS_MEASURE_OWNER_VOICE:
@@ -582,6 +652,7 @@ int bark_control_init(void)
     }
     bark_sync_store_from_strategy();
     memset(&g_fsm, 0, sizeof(g_fsm));
+    bark_load_calm_music_index();
     bark_listen_reset_locked();
     return bark_detect_init();
 }

@@ -14,7 +14,10 @@
 #define DS_OWNER_PCM_PATH   DS_USERDATA_DIR "/music/owner.wav"
 #define DS_OWNER_REC_TMP_PATH   DS_USERDATA_DIR "/music/tmp/owner.wav"   // 临时录制路径
 #define DS_OWNER_REC_MOVE_TIMEOUT_SEC 600   // tmp 文件 10 分钟内未保存则自动删除
-#define DS_CALM_MUSIC_PATH  DS_USERDATA_DIR "/music/calm.wav"
+#define DS_CALM_MUSIC_1_PATH DS_USERDATA_DIR "/music/calm1.wav"
+#define DS_CALM_MUSIC_2_PATH DS_USERDATA_DIR "/music/calm2.wav"
+#define DS_CALM_MUSIC_INDEX_PATH DS_USERDATA_DIR "/params/calm_music_index.bin"
+#define DS_CALM_MUSIC_INDEX_TMP_PATH DS_CALM_MUSIC_INDEX_PATH ".tmp"
 #define DS_STRATEGY_PATH            DS_USERDATA_DIR "/params/calm_strategy.bin"
 #define DS_STRATEGY_AUTO_PATH       DS_USERDATA_DIR "/params/calm_strategy_auto.bin"
 #define DS_STRATEGY_MANUAL_PATH     DS_USERDATA_DIR "/params/calm_strategy_manual.bin"
