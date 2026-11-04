@@ -63,7 +63,7 @@ typedef struct
     time_t rest_deadline;
 } bark_fsm_t;
 
-static uint8_t g_power_on = 1;
+static uint8_t g_power_on = 0;
 static uint8_t g_reward_enabled = 0; /* 零食奖励功能开关（MCU 同步，安抚成功时判定是否额外投喂） */
 static volatile uint8_t g_calm_music_index;
 static bark_fsm_t g_fsm;
@@ -789,7 +789,7 @@ void bark_control_tick(void)
 
 uint8_t bark_control_is_session_active(void)
 {
-    return g_fsm.in_session || g_power_on;
+    return g_power_on;
 }
 
 uint16_t bark_control_set_mode(
