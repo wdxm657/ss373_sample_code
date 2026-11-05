@@ -8,8 +8,12 @@
 #include "calm_strategy.h"
 #include "app_config.h"
 
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define DS_STRATEGY_MAGIC 0x444D4353u /* 'SCMD' little-endian */
 
@@ -38,6 +42,41 @@ typedef struct __attribute__((packed))
 } ds_strategy_file_v1_t;
 
 static calm_strategy_t g_st;
+
+static int calm_strategy_write_file(const char *path, const void *data, size_t size)
+{
+    FILE *fp;
+    int flush_ret;
+    int sync_ret;
+    int close_ret;
+
+    if (mkdir(DS_USERDATA_DIR "/params", 0755) != 0 && errno != EEXIST)
+    {
+        LOG_ERROR("strategy mkdir params failed: %s\n", strerror(errno));
+        return -1;
+    }
+    fp = fopen(path, "wb");
+    if (!fp)
+    {
+        LOG_ERROR("strategy file open failed: %s\n", strerror(errno));
+        return -1;
+    }
+    if (fwrite(data, 1, size, fp) != size)
+    {
+        fclose(fp);
+        return -1;
+    }
+    flush_ret = fflush(fp);
+    sync_ret = (flush_ret == 0) ? fsync(fileno(fp)) : -1;
+    close_ret = fclose(fp);
+    return (flush_ret == 0 && sync_ret == 0 && close_ret == 0) ? 0 : -1;
+}
+
+static int calm_strategy_save_mode(ds_calm_mode_t mode)
+{
+    uint8_t raw = (uint8_t)mode;
+    return calm_strategy_write_file(DS_STRATEGY_MODE_PATH, &raw, sizeof(raw));
+}
 
 static int calm_strategy_measure_valid(uint8_t m)
 {
@@ -225,7 +264,8 @@ const char *calm_strategy_get_path_by_mode(ds_calm_mode_t mode)
 int calm_strategy_init(void)
 {
     FILE *fp;
-    uint8_t saved_mode;
+    uint8_t saved_mode = 0xFF;
+    int mode_valid = 0;
 
     calm_strategy_set_default();
 
@@ -236,16 +276,30 @@ int calm_strategy_init(void)
         if (fread(&saved_mode, 1, 1, fp) == 1)
         {
             LOG_INFO("strategy init: read mode=%u from %s\n", saved_mode, DS_STRATEGY_MODE_PATH);
+            mode_valid = (saved_mode <= DS_CALM_MODE_MANUAL &&
+                          fgetc(fp) == EOF && !ferror(fp));
         }
         fclose(fp);
 
-        if (saved_mode <= DS_CALM_MODE_MANUAL &&
-            calm_strategy_load((ds_calm_mode_t)saved_mode) == 0)
+        if (mode_valid && calm_strategy_load((ds_calm_mode_t)saved_mode) == 0)
         {
             LOG_INFO("strategy init ok: restored mode=%d from file\n", saved_mode);
             return 0;
         }
         LOG_WARN("strategy init: mode file exists but load failed (mode=%u)\n", saved_mode);
+
+        if (mode_valid)
+        {
+            calm_strategy_set_default();
+            g_st.mode = (ds_calm_mode_t)saved_mode;
+            if (calm_strategy_save() == 0 && calm_strategy_save_mode(g_st.mode) == 0)
+            {
+                LOG_WARN("strategy init: restored mode=%u with default strategy\n", saved_mode);
+                return 0;
+            }
+            LOG_ERROR("strategy init: failed to persist default strategy for mode=%u\n", saved_mode);
+            return -1;
+        }
     }
     else
     {
@@ -255,7 +309,12 @@ int calm_strategy_init(void)
     /* 无 mode 文件或加载失败，按自动模式初始化 */
     if (calm_strategy_load(DS_CALM_MODE_AUTO) != 0)
     {
-        calm_strategy_save();
+        calm_strategy_set_default();
+        if (calm_strategy_save() != 0 || calm_strategy_save_mode(DS_CALM_MODE_AUTO) != 0)
+        {
+            LOG_ERROR("strategy init: failed to persist auto defaults\n");
+            return -1;
+        }
     }
     return 0;
 }
@@ -312,7 +371,6 @@ int calm_strategy_load(ds_calm_mode_t mode)
 
 int calm_strategy_save(void)
 {
-    FILE *fp;
     ds_strategy_file_t f;
 
     memset(&f, 0, sizeof(f));
@@ -325,18 +383,12 @@ int calm_strategy_save(void)
     f.us_cnt = g_st.us_cnt;
     memcpy(f.us_order, g_st.us_order, sizeof(f.us_order));
 
-    fp = fopen(calm_strategy_get_path_by_mode(g_st.mode), "wb");
-    if (!fp)
+    if (calm_strategy_write_file(calm_strategy_get_path_by_mode(g_st.mode),
+                                 &f, sizeof(f)) != 0)
     {
         LOG_ERROR("strategy save open failed: %s\n", calm_strategy_get_path_by_mode(g_st.mode));
         return -1;
     }
-    if (fwrite(&f, sizeof(f), 1, fp) != 1)
-    {
-        fclose(fp);
-        return -2;
-    }
-    fclose(fp);
     LOG_INFO("strategy saved mode=%d enabledMask=0x%02x "
              "measureCnt=%d measureOrder=[%d,%d,%d,%d] "
              "usCnt=%d usOrder=[%d,%d,%d] path=%s\n",
@@ -354,7 +406,11 @@ int calm_strategy_save(void)
 void calm_strategy_factory_reset(void)
 {
     calm_strategy_set_default();
-    calm_strategy_save();
+    if (calm_strategy_save() != 0 ||
+        calm_strategy_save_mode(DS_CALM_MODE_AUTO) != 0)
+    {
+        LOG_ERROR("strategy factory reset: failed to persist defaults\n");
+    }
 }
 
 int calm_strategy_set_from_uart_payload(const uint8_t *payload, uint16_t len)
@@ -363,6 +419,7 @@ int calm_strategy_set_from_uart_payload(const uint8_t *payload, uint16_t len)
     uint8_t m_cnt;
     uint8_t u_cnt;
     uint8_t i;
+    calm_strategy_t previous = g_st;
 
     LOG_INFO("strategy set from uart: len=%u\n", len);
 
@@ -447,18 +504,13 @@ int calm_strategy_set_from_uart_payload(const uint8_t *payload, uint16_t len)
              g_st.measure_order[2], g_st.measure_order[3],
              g_st.us_order[0], g_st.us_order[1], g_st.us_order[2]);
 
-    /* 同步保存 mode 到 DS_STRATEGY_MODE_PATH，确保重启后恢复正确模式 */
+    /* Save the strategy first; commit the active-mode marker last. */
+    if (calm_strategy_save() != 0 || calm_strategy_save_mode(g_st.mode) != 0)
     {
-        FILE *mf = fopen(DS_STRATEGY_MODE_PATH, "wb");
-        if (mf)
-        {
-            uint8_t raw = (uint8_t)g_st.mode;
-            fwrite(&raw, 1, 1, mf);
-            fclose(mf);
-        }
+        g_st = previous;
+        LOG_ERROR("strategy set: durable save failed\n");
+        return -9;
     }
-
-    calm_strategy_save();
     return 0;
 
 }
@@ -540,8 +592,7 @@ build_rsp:
 
 int calm_strategy_set_mode(ds_calm_mode_t mode)
 {
-    FILE *fp;
-    uint8_t raw;
+    calm_strategy_t previous = g_st;
 
     LOG_INFO("strategy set_mode: mode=%d\n", mode);
 
@@ -553,22 +604,16 @@ int calm_strategy_set_mode(ds_calm_mode_t mode)
 
     g_st.mode = mode;
 
-    /* 把 mode 写入本地文件，供下次 init 读取 */
-    raw = (uint8_t)mode;
-    fp = fopen(DS_STRATEGY_MODE_PATH, "wb");
-    if (fp)
-    {
-        fwrite(&raw, 1, 1, fp);
-        fclose(fp);
-        LOG_INFO("strategy mode saved to %s: mode=%u\n", DS_STRATEGY_MODE_PATH, raw);
-    }
-    else
+    if (calm_strategy_save() != 0 || calm_strategy_save_mode(mode) != 0)
     {
         LOG_ERROR("strategy mode save failed: %s\n", DS_STRATEGY_MODE_PATH);
+        g_st = previous;
+        return -2;
     }
 
-    /* 将策略保存到对应模式的文件 */
-    return calm_strategy_save();
+    LOG_INFO("strategy mode durably saved to %s: mode=%u\n",
+             DS_STRATEGY_MODE_PATH, (uint8_t)mode);
+    return 0;
 
 }
 

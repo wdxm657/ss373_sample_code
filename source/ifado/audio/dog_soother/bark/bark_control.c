@@ -844,11 +844,15 @@ uint16_t bark_control_handle_strategy_cmd(
     if (cmd_id == DS_CMD_CALM_STRATEGY_SET)
     {
         LOG_INFO("bark_control: DS_CMD_CALM_STRATEGY_SET len=%u\n", payload_len);
-        if (calm_strategy_set_from_uart_payload(payload, payload_len) != 0)
         {
-            rsp[0] = DS_UART_STATUS_PARAM_ERROR;
-            LOG_ERROR("bark_control: strategy set failed\n");
-            return 1;
+            int set_ret = calm_strategy_set_from_uart_payload(payload, payload_len);
+            if (set_ret != 0)
+            {
+                rsp[0] = (set_ret == -9)
+                    ? DS_UART_STATUS_INTERNAL_ERROR : DS_UART_STATUS_PARAM_ERROR;
+                LOG_ERROR("bark_control: strategy set failed ret=%d\n", set_ret);
+                return 1;
+            }
         }
         bark_sync_store_from_strategy();
         rsp[0] = DS_UART_STATUS_OK;
