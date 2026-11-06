@@ -813,7 +813,13 @@ uint16_t comfort_store_factory_reset(/* 删主人录音、清记录、恢复默�
     (void)req;
     (void)req_len;
 
-    audio_delete_owner_rec();
+    if (audio_delete_owner_rec() != 0)
+    {
+        if (!rsp || rsp_cap < 1)
+            return 0;
+        rsp[0] = DS_UART_STATUS_INTERNAL_ERROR;
+        return 1;
+    }
     g_rt.owner_duration_sec = 0;
 
     /* 清空安抚记录 */

@@ -10,7 +10,8 @@ void resume_ai();
 
 /* 从 owner.wav 刷新是否存在及时长（秒） */
 void audio_refresh_owner_info(uint8_t *exist, uint8_t *duration_sec);
-void audio_delete_owner_rec(void);
+/* Returns 0 after deleting the files and syncing their directories. */
+int audio_delete_owner_rec(void);
 
 /* 返回当前音量 0-100 百分比 */
 uint8_t audio_get_volume(void);
